@@ -2,7 +2,13 @@ use rusqlite::{Connection, OptionalExtension};
 
 use workbench_application::error::AppError;
 
-const MIGRATIONS: &[(&str, &str)] = &[("001_initial", include_str!("migrations/001_initial.sql"))];
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("001_initial", include_str!("migrations/001_initial.sql")),
+    (
+        "002_remote_tests",
+        include_str!("migrations/002_remote_tests.sql"),
+    ),
+];
 
 pub fn apply(conn: &Connection) -> Result<(), AppError> {
     conn.execute(

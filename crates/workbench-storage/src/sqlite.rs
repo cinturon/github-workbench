@@ -2,9 +2,12 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension};
+use workbench_application::action_tests::TestSessionStatus;
 use workbench_application::error::AppError;
 use workbench_application::ports::{
-    NewProject, OperationRecord, OperationStore, ProjectRecord, StepRecord,
+    CleanupItemRecord, NewCleanupItem, NewProject, NewTestSession, OperationRecord,
+    OperationStore, ProjectRecord, StepRecord, TestSessionRecord, TestSessionStore,
+    TestSessionUpdate,
 };
 use workbench_domain::operations::plan::{OperationPlan, StepStatus};
 use workbench_domain::repository::RepositorySnapshot;
@@ -42,6 +45,74 @@ fn step_status_to_text(status: StepStatus) -> Result<String, AppError> {
 fn step_status_from_text(text: &str) -> Result<StepStatus, AppError> {
     serde_json::from_str(text).map_err(|e| AppError::Storage {
         detail: e.to_string(),
+    })
+}
+
+fn test_session_status_to_text(status: TestSessionStatus) -> Result<String, AppError> {
+    serde_json::to_string(&status).map_err(|e| AppError::Storage {
+        detail: e.to_string(),
+    })
+}
+
+fn test_session_status_from_text(text: &str) -> Result<TestSessionStatus, AppError> {
+    serde_json::from_str(text).map_err(|e| AppError::Storage {
+        detail: e.to_string(),
+    })
+}
+
+fn run_id_to_i64(run_id: Option<u64>) -> Result<Option<i64>, AppError> {
+    run_id
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|e| AppError::Storage {
+            detail: e.to_string(),
+        })
+}
+
+fn run_id_from_i64(run_id: Option<i64>) -> Result<Option<u64>, AppError> {
+    run_id
+        .map(u64::try_from)
+        .transpose()
+        .map_err(|e| AppError::Storage {
+            detail: e.to_string(),
+        })
+}
+
+fn row_to_test_session(row: &rusqlite::Row<'_>) -> Result<TestSessionRecord, rusqlite::Error> {
+    let status_text: String = row.get(7)?;
+    let status = test_session_status_from_text(&status_text).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    let run_id = run_id_from_i64(row.get(6)?).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Integer, Box::new(e))
+    })?;
+    Ok(TestSessionRecord {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        session_id: row.get(2)?,
+        commit_sha: row.get(3)?,
+        remote_ref: row.get(4)?,
+        workflow_name: row.get(5)?,
+        run_id,
+        status,
+        result_json: row.get(8)?,
+        evidence_dir: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
+fn row_to_cleanup_item(row: &rusqlite::Row<'_>) -> Result<CleanupItemRecord, rusqlite::Error> {
+    Ok(CleanupItemRecord {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        resource_kind: row.get(2)?,
+        resource_id: row.get(3)?,
+        expected_identity: row.get(4)?,
+        due_at: row.get(5)?,
+        status: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
     })
 }
 
@@ -378,5 +449,237 @@ impl OperationStore for SqliteStore {
         }
 
         Ok(records)
+    }
+}
+
+impl TestSessionStore for SqliteStore {
+    fn create_test_session(
+        &self,
+        session: NewTestSession<'_>,
+    ) -> Result<TestSessionRecord, AppError> {
+        let status_text = test_session_status_to_text(session.status.clone())?;
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT INTO test_sessions
+             (id, project_id, session_key, commit_sha, remote_ref, workflow_name,
+              run_id, status, result_json, evidence_dir, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8, NULL, ?9, ?9)",
+            params![
+                session.id,
+                session.project_id,
+                session.session_id,
+                session.commit_sha,
+                session.remote_ref,
+                session.workflow_name,
+                status_text,
+                session.result_json,
+                session.now,
+            ],
+        )
+        .map_err(|e| AppError::Storage {
+            detail: e.to_string(),
+        })?;
+
+        Ok(TestSessionRecord {
+            id: session.id.to_string(),
+            project_id: session.project_id.to_string(),
+            session_id: session.session_id.to_string(),
+            commit_sha: session.commit_sha.to_string(),
+            remote_ref: session.remote_ref.to_string(),
+            workflow_name: session.workflow_name.to_string(),
+            run_id: None,
+            status: session.status,
+            result_json: session.result_json.to_string(),
+            evidence_dir: None,
+            created_at: session.now.to_string(),
+            updated_at: session.now.to_string(),
+        })
+    }
+
+    fn update_test_session(&self, update: TestSessionUpdate<'_>) -> Result<(), AppError> {
+        let status_text = test_session_status_to_text(update.status)?;
+        let run_id = run_id_to_i64(update.run_id)?;
+        let conn = self.lock_conn()?;
+        let updated = conn
+            .execute(
+                "UPDATE test_sessions
+                 SET run_id = ?1, status = ?2, result_json = ?3,
+                     evidence_dir = ?4, updated_at = ?5
+                 WHERE project_id = ?6 AND session_key = ?7",
+                params![
+                    run_id,
+                    status_text,
+                    update.result_json,
+                    update.evidence_dir,
+                    update.now,
+                    update.project_id,
+                    update.session_id,
+                ],
+            )
+            .map_err(|e| AppError::Storage {
+                detail: e.to_string(),
+            })?;
+        if updated == 0 {
+            return Err(AppError::Storage {
+                detail: format!(
+                    "missing test session {}/{}",
+                    update.project_id, update.session_id
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    fn get_test_session(
+        &self,
+        project_id: &str,
+        session_id: &str,
+    ) -> Result<Option<TestSessionRecord>, AppError> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            "SELECT id, project_id, session_key, commit_sha, remote_ref,
+                    workflow_name, run_id, status, result_json, evidence_dir,
+                    created_at, updated_at
+             FROM test_sessions
+             WHERE project_id = ?1 AND session_key = ?2",
+            params![project_id, session_id],
+            row_to_test_session,
+        )
+        .optional()
+        .map_err(|e| AppError::Storage {
+            detail: e.to_string(),
+        })
+    }
+
+    fn list_test_sessions(
+        &self,
+        project_id: &str,
+        limit: u32,
+    ) -> Result<Vec<TestSessionRecord>, AppError> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, project_id, session_key, commit_sha, remote_ref,
+                        workflow_name, run_id, status, result_json, evidence_dir,
+                        created_at, updated_at
+                 FROM test_sessions
+                 WHERE project_id = ?1
+                 ORDER BY updated_at DESC
+                 LIMIT ?2",
+            )
+            .map_err(|e| AppError::Storage {
+                detail: e.to_string(),
+            })?;
+
+        let rows = stmt
+            .query_map(params![project_id, limit], row_to_test_session)
+            .map_err(|e| AppError::Storage {
+                detail: e.to_string(),
+            })?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Storage {
+                detail: e.to_string(),
+            })
+    }
+
+    fn enqueue_cleanup(&self, item: NewCleanupItem<'_>) -> Result<CleanupItemRecord, AppError> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "INSERT INTO cleanup_items
+             (id, project_id, resource_kind, resource_id, expected_identity,
+              due_at, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?7)",
+            params![
+                item.id,
+                item.project_id,
+                item.resource_kind,
+                item.resource_id,
+                item.expected_identity,
+                item.due_at,
+                item.now,
+            ],
+        )
+        .map_err(|e| AppError::Storage {
+            detail: e.to_string(),
+        })?;
+
+        Ok(CleanupItemRecord {
+            id: item.id.to_string(),
+            project_id: item.project_id.to_string(),
+            resource_kind: item.resource_kind.to_string(),
+            resource_id: item.resource_id.to_string(),
+            expected_identity: item.expected_identity.to_string(),
+            due_at: item.due_at.to_string(),
+            status: "pending".to_string(),
+            created_at: item.now.to_string(),
+            updated_at: item.now.to_string(),
+        })
+    }
+
+    fn get_cleanup_item(
+        &self,
+        project_id: &str,
+        item_id: &str,
+    ) -> Result<Option<CleanupItemRecord>, AppError> {
+        let conn = self.lock_conn()?;
+        conn.query_row(
+            "SELECT id, project_id, resource_kind, resource_id, expected_identity,
+                    due_at, status, created_at, updated_at
+             FROM cleanup_items
+             WHERE project_id = ?1 AND id = ?2",
+            params![project_id, item_id],
+            row_to_cleanup_item,
+        )
+        .optional()
+        .map_err(|e| AppError::Storage {
+            detail: e.to_string(),
+        })
+    }
+
+    fn list_cleanup_items(&self, project_id: &str) -> Result<Vec<CleanupItemRecord>, AppError> {
+        let conn = self.lock_conn()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, project_id, resource_kind, resource_id, expected_identity,
+                        due_at, status, created_at, updated_at
+                 FROM cleanup_items
+                 WHERE project_id = ?1
+                 ORDER BY due_at ASC",
+            )
+            .map_err(|e| AppError::Storage {
+                detail: e.to_string(),
+            })?;
+
+        let rows = stmt
+            .query_map([project_id], row_to_cleanup_item)
+            .map_err(|e| AppError::Storage {
+                detail: e.to_string(),
+            })?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Storage {
+                detail: e.to_string(),
+            })
+    }
+
+    fn complete_cleanup_item(&self, item_id: &str, now: &str) -> Result<(), AppError> {
+        let conn = self.lock_conn()?;
+        let updated = conn
+            .execute(
+                "UPDATE cleanup_items
+                 SET status = 'completed', updated_at = ?1
+                 WHERE id = ?2 AND status = 'pending'",
+                params![now, item_id],
+            )
+            .map_err(|e| AppError::Storage {
+                detail: e.to_string(),
+            })?;
+        if updated == 0 {
+            return Err(AppError::Storage {
+                detail: format!("missing cleanup item {item_id}"),
+            });
+        }
+        Ok(())
     }
 }
