@@ -1,11 +1,17 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
+use workbench_application::action_tests::RemoteTestSessionPlan;
 use workbench_application::AppError;
 
 pub mod commands;
 
+pub(crate) type PreviewPlans = Arc<Mutex<HashMap<String, RemoteTestSessionPlan>>>;
+
 pub struct DesktopState {
     data_dir: PathBuf,
+    preview_plans: PreviewPlans,
 }
 
 impl DesktopState {
@@ -15,11 +21,18 @@ impl DesktopState {
             path: data_dir.display().to_string(),
             detail: error.to_string(),
         })?;
-        Ok(Self { data_dir })
+        Ok(Self {
+            data_dir,
+            preview_plans: Arc::new(Mutex::new(HashMap::new())),
+        })
     }
 
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+
+    pub(crate) fn preview_plans(&self) -> PreviewPlans {
+        Arc::clone(&self.preview_plans)
     }
 }
 

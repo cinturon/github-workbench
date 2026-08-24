@@ -29,6 +29,7 @@ export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [selectedTest, setSelectedTest] = useState("");
   const [plan, setPlan] = useState<SessionPlan | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [result, setResult] = useState<TestResult | null>(null);
   const [status, setStatus] = useState<RunStatus>("idle");
   const [error, setError] = useState("");
@@ -59,6 +60,7 @@ export default function App() {
           : (nextCatalog.tests[0]?.name ?? ""),
       );
       setPlan(null);
+      setPreviewId(null);
       setResult(null);
       setStatus("idle");
     } catch (commandError) {
@@ -79,10 +81,10 @@ export default function App() {
       const response = await startActionTest(
         normalizedRoot,
         selectedTest,
-        false,
         null,
       );
       setPlan(response.plan);
+      setPreviewId(response.preview_id);
       setStatus("planned");
     } catch (commandError) {
       setStatus("idle");
@@ -91,7 +93,7 @@ export default function App() {
   }
 
   async function confirmRun() {
-    if (!plan) {
+    if (!plan || !previewId) {
       return;
     }
 
@@ -101,17 +103,19 @@ export default function App() {
       const response = await startActionTest(
         normalizedRoot,
         null,
-        true,
-        plan,
+        previewId,
       );
       setPlan(response.plan);
+      setPreviewId(null);
       if (response.result) {
         finish(response.result);
       } else {
         await pollForResult(response.plan.session_id);
       }
     } catch (commandError) {
-      setStatus("planned");
+      setPlan(null);
+      setPreviewId(null);
+      setStatus("idle");
       setError(describeError(commandError));
     }
   }
@@ -246,6 +250,7 @@ export default function App() {
                       onChange={() => {
                         setSelectedTest(test.name);
                         setPlan(null);
+                        setPreviewId(null);
                         setResult(null);
                         setStatus("idle");
                       }}

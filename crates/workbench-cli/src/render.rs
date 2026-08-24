@@ -512,6 +512,7 @@ mod tests {
             owner: "acme".into(),
             repo: "widgets".into(),
             remote: "origin".into(),
+            remote_url: "git@github.com:acme/widgets.git".into(),
             base_sha: "abc123".into(),
             session_id: "01JABC".into(),
             workflow_file_name: "github-workbench-test-01JABC.yml".into(),

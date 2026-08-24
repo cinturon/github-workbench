@@ -64,6 +64,7 @@ pub struct FakeGit {
     pub executed: RefCell<Vec<GitCommand>>,
     pub fail_kind: RefCell<Option<String>>,
     pub refs: RefCell<BTreeMap<String, String>>,
+    pub rev_parse_responses: RefCell<VecDeque<Option<String>>>,
 }
 
 impl FakeGit {
@@ -189,6 +190,9 @@ impl GitClient for FakeGit {
     }
 
     fn rev_parse(&self, _repo_root: &Path, reference: &str) -> Result<Option<String>, AppError> {
+        if let Some(response) = self.rev_parse_responses.borrow_mut().pop_front() {
+            return Ok(response);
+        }
         Ok(self.refs.borrow().get(reference).cloned())
     }
 }

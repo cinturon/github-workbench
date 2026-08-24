@@ -9,10 +9,11 @@ use args::{
     ActionCommands, CleanupCommands, Cli, Commands, IssueCommands, OpsCommands, RunsCommands,
 };
 use clap::Parser;
+use workbench_application::action_tests::RemoteTestResult;
 use workbench_application::clock::{SystemClock, ThreadSleeper};
 use workbench_application::ids::UlidGenerator;
 use workbench_application::policy_source::FilePolicySource;
-use workbench_application::ports::{GitClient, OperationStore};
+use workbench_application::ports::{GitClient, OperationStore, TestSessionStore};
 use workbench_application::use_cases::action_discovery::{
     discover_action_tests, ActionTestCatalog,
 };
@@ -25,7 +26,7 @@ use workbench_application::use_cases::remote_test::{
 };
 use workbench_application::use_cases::start_issue::{execute_start_issue, plan_start_issue};
 use workbench_application::use_cases::status::repository_status;
-use workbench_application::use_cases::test_sessions::list_sessions;
+use workbench_application::use_cases::test_sessions::{get_session_result, list_sessions};
 use workbench_application::AppError;
 use workbench_domain::operations::plan::GitCommand;
 use workbench_git::{ProcessGitClient, StdProcessRunner};
@@ -193,7 +194,7 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
                 }
                 let github = ProcessGithubClient::new(StdProcessRunner, root);
                 let sleeper = ThreadSleeper;
-                let result = execute_remote_test(
+                let outcome = execute_remote_test(
                     &git,
                     &github,
                     &store,
@@ -203,8 +204,8 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
                     &plan,
                     &data_dir.join("evidence"),
                     true,
-                )?;
-                println!("{}", render_remote_test_result(&result));
+                );
+                print_remote_test_outcome(outcome, &git, &store, &cwd, &plan.session_id)?;
             }
         },
         Commands::Runs { command } => match command {
@@ -217,7 +218,7 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
                 let root = git.resolve_toplevel(&cwd)?;
                 let github = ProcessGithubClient::new(StdProcessRunner, root);
                 let sleeper = ThreadSleeper;
-                let result = watch_session(
+                let outcome = watch_session(
                     &git,
                     &github,
                     &store,
@@ -228,8 +229,8 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
                     &session_id,
                     &data_dir.join("evidence"),
                     true,
-                )?;
-                println!("{}", render_remote_test_result(&result));
+                );
+                print_remote_test_outcome(outcome, &git, &store, &cwd, &session_id)?;
             }
         },
         Commands::Cleanup { command } => match command {
@@ -254,6 +255,32 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
     }
 
     Ok(RunOutcome::Success)
+}
+
+fn print_remote_test_outcome<G, S>(
+    outcome: Result<RemoteTestResult, AppError>,
+    git: &G,
+    store: &S,
+    path: &Path,
+    session_id: &str,
+) -> Result<(), AppError>
+where
+    G: GitClient,
+    S: OperationStore + TestSessionStore,
+{
+    match outcome {
+        Ok(result) => {
+            println!("{}", render_remote_test_result(&result));
+            Ok(())
+        }
+        Err(error @ AppError::AssertionFailed { .. }) => {
+            if let Some(result) = get_session_result(git, store, path, session_id)? {
+                println!("{}", render_remote_test_result(&result));
+            }
+            Err(error)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn select_test_name(

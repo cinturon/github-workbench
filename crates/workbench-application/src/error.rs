@@ -229,7 +229,7 @@ impl AppError {
                 vec!["The remote test was not marked as passed.".into()],
                 false,
                 format!(
-                    "Inspect the session evidence and workflow logs with `gww runs show {session_id}`."
+                    "Use `gww runs list` to inspect sessions and `gww runs watch {session_id}` to print the persisted result again."
                 ),
             ),
             AppError::RemoteNotResolved { candidates } => (

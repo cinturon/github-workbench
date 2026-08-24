@@ -77,6 +77,9 @@ pub fn assert_no_force(args: &[String]) {
             || a == "--force-with-lease"
             || a.starts_with("--force=")
             || a.starts_with("--force-with-lease=")
+            || a.split_once(':').is_some_and(|(local_ref, remote_ref)| {
+                local_ref.starts_with('+') || remote_ref.starts_with('+')
+            })
     });
     assert!(
         !forbidden,
@@ -107,6 +110,28 @@ mod tests {
                 || a.starts_with("--force=")
                 || a.starts_with("--force-with-lease=")
         }));
+    }
+
+    #[test]
+    #[should_panic(expected = "force push arguments are forbidden")]
+    fn push_argv_rejects_force_marker_in_local_ref() {
+        command_argv(&GitCommand::PushRef {
+            remote: "github".into(),
+            local_ref: "+feature/x".into(),
+            remote_ref: "feature/x".into(),
+            set_upstream: false,
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "force push arguments are forbidden")]
+    fn push_argv_rejects_force_marker_in_remote_ref() {
+        command_argv(&GitCommand::PushRef {
+            remote: "github".into(),
+            local_ref: "feature/x".into(),
+            remote_ref: "+feature/x".into(),
+            set_upstream: false,
+        });
     }
 
     #[test]

@@ -84,27 +84,67 @@ where
     validate_expected_identity(&item, &expected, &state)?;
 
     github.auth_status()?;
-    git.fetch(&root, &expected.identity.remote)?;
     let remote_tracking_ref = format!(
         "refs/remotes/{}/{}",
         expected.identity.remote, expected.identity.ref_name
     );
-    let actual = git.rev_parse(&root, &remote_tracking_ref)?;
-    if actual.as_deref() != Some(expected.commit_sha.as_str()) {
-        return Err(AppError::CleanupRefMoved {
-            ref_name: expected.identity.ref_name.clone(),
-            expected: expected.commit_sha.clone(),
-            actual: actual.unwrap_or_else(|| "<missing>".into()),
-        });
-    }
+    verify_remote_tip(git, &root, &expected, &remote_tracking_ref)?;
+    verify_remote_tip(git, &root, &expected, &remote_tracking_ref)?;
 
     let mut snapshot = git.snapshot(&root)?;
     snapshot.selected_remote = Some(expected.identity.remote.clone());
     let plan = cleanup_plan(&item, &expected);
     let outcome = execute_plan(git, store, clock, ids, &project.id, &snapshot, &plan)?;
+
+    // Git has no non-force compare-and-delete push. A ref can still move in the
+    // residual TOCTOU window after the second check; detect and surface a
+    // surviving/recreated ref immediately instead of marking cleanup complete.
+    git.fetch(&root, &expected.identity.remote)?;
+    if let Some(actual) = git.rev_parse(&root, &remote_tracking_ref)? {
+        if actual != expected.commit_sha {
+            return Err(ref_moved(&expected, actual));
+        }
+        return Err(AppError::OperationFailed {
+            message: format!(
+                "Cleanup ref `{}` still exists at `{}` after deletion.",
+                expected.identity.ref_name, actual
+            ),
+            changed: vec!["The remote-ref deletion was attempted and journaled.".into()],
+            unchanged: vec!["The cleanup item remains pending.".into()],
+            retry_safe: false,
+            remediation: "Inspect the remote ref before attempting cleanup again.".into(),
+        });
+    }
+
     let now = clock.now_rfc3339();
     store.complete_cleanup_item(&item.id, &now)?;
     Ok(outcome)
+}
+
+fn verify_remote_tip<G: GitClient>(
+    git: &G,
+    root: &Path,
+    expected: &ExpectedRemoteRef,
+    remote_tracking_ref: &str,
+) -> Result<(), AppError> {
+    git.fetch(root, &expected.identity.remote)?;
+    let actual = git.rev_parse(root, remote_tracking_ref)?;
+    if actual.as_deref() == Some(expected.commit_sha.as_str()) {
+        Ok(())
+    } else {
+        Err(ref_moved(
+            expected,
+            actual.unwrap_or_else(|| "<missing>".into()),
+        ))
+    }
+}
+
+fn ref_moved(expected: &ExpectedRemoteRef, actual: String) -> AppError {
+    AppError::CleanupRefMoved {
+        ref_name: expected.identity.ref_name.clone(),
+        expected: expected.commit_sha.clone(),
+        actual,
+    }
 }
 
 fn cleanup_plan(item: &CleanupItemRecord, expected: &ExpectedRemoteRef) -> OperationPlan {

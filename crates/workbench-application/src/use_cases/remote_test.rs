@@ -72,6 +72,12 @@ where
         .as_deref()
         .ok_or(AppError::RepositoryNotMapped)?;
     let remote = resolve_remote(&snapshot.remotes, Some(mapped_remote), remote_flag)?;
+    let remote_url = snapshot
+        .remotes
+        .iter()
+        .find(|candidate| candidate.name == remote)
+        .map(|candidate| candidate.url.clone())
+        .ok_or(AppError::RepositoryNotMapped)?;
     let owner = project.owner.clone().ok_or(AppError::RepositoryNotMapped)?;
     let repo = project.repo.clone().ok_or(AppError::RepositoryNotMapped)?;
 
@@ -195,6 +201,7 @@ where
         owner,
         repo,
         remote,
+        remote_url,
         base_sha,
         session_id,
         workflow_file_name,
@@ -229,9 +236,28 @@ where
     I: IdGenerator,
     L: Sleeper,
 {
-    github.auth_status()?;
-
+    validate_remote_test_plan(plan)?;
     let snapshot = git.snapshot(&plan.repo_root)?;
+    let actual_remote_url = snapshot
+        .remotes
+        .iter()
+        .find(|remote| remote.name == plan.remote)
+        .map(|remote| remote.url.as_str());
+    if actual_remote_url != Some(plan.remote_url.as_str()) {
+        return Err(AppError::OperationFailed {
+            message: format!(
+                "remote `{}` changed after remote-test planning",
+                plan.remote
+            ),
+            changed: Vec::new(),
+            unchanged: vec![
+                "The generated workflow was not written.".into(),
+                "The temporary branch was not pushed.".into(),
+            ],
+            retry_safe: true,
+            remediation: "Review the repository remotes and create a new remote-test plan.".into(),
+        });
+    }
     if !snapshot.dirty_paths.is_empty() {
         return Err(AppError::DirtyWorkingTree {
             paths: snapshot.dirty_paths,
@@ -249,6 +275,7 @@ where
             remediation: "Create a new remote-test plan from the current HEAD.".into(),
         });
     }
+    github.auth_status()?;
 
     let workflow_path = plan.repo_root.join(&plan.workflow_path);
     fs::create_dir_all(workflow_path.parent().unwrap())
@@ -311,6 +338,89 @@ where
         evidence_root,
         wait,
     )
+}
+
+fn validate_remote_test_plan(plan: &RemoteTestSessionPlan) -> Result<(), AppError> {
+    let invalid = |detail: &str| AppError::Usage {
+        message: format!("invalid remote-test plan: {detail}"),
+    };
+    let expected_workflow_path =
+        workflow_file_path(&plan.session_id).map_err(|_| invalid("invalid session id"))?;
+    let workflow_path = Path::new(&plan.workflow_path);
+    if workflow_path.is_absolute()
+        || workflow_path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+        || plan.workflow_path != expected_workflow_path
+    {
+        return Err(invalid(
+            "workflow path must match the generated path under .github/workflows",
+        ));
+    }
+    let expected_workflow_file_name = workflow_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| invalid("workflow path has no file name"))?;
+    if plan.workflow_file_name != expected_workflow_file_name {
+        return Err(invalid("workflow file name does not match workflow path"));
+    }
+    if plan.cleanup_identity.remote != plan.remote
+        || plan.cleanup_identity.session_id != plan.session_id
+        || plan.cleanup_identity.ref_name.starts_with('+')
+    {
+        return Err(invalid(
+            "cleanup identity does not match the planned remote",
+        ));
+    }
+    let expected_workflow_yaml = generate_workflow(
+        &plan.test_plan,
+        &plan.session_id,
+        &plan.cleanup_identity.ref_name,
+    )
+    .map_err(|_| invalid("workflow could not be regenerated"))?;
+    if plan.workflow_yaml != expected_workflow_yaml {
+        return Err(invalid(
+            "workflow YAML does not match the generated test plan",
+        ));
+    }
+    if plan.git_plan.id.to_string() != plan.session_id
+        || plan.git_plan.kind != "remote-action-test"
+        || plan.git_plan.risk != RiskClass::Medium
+    {
+        return Err(invalid("Git operation metadata does not match the session"));
+    }
+
+    let [GitCommand::CreateBranch { name, start_point }, GitCommand::CommitPaths { message, paths }, GitCommand::PushRef {
+        remote,
+        local_ref,
+        remote_ref,
+        set_upstream,
+    }] = plan.git_plan.commands.as_slice()
+    else {
+        return Err(invalid(
+            "Git commands must be exactly create-branch, commit-paths, and push-ref",
+        ));
+    };
+    let expected_message = format!("chore: add GitHub Workbench test {}", plan.session_id);
+    if name != &plan.cleanup_identity.ref_name
+        || start_point != &plan.base_sha
+        || message != &expected_message
+        || paths.as_slice() != [plan.workflow_path.as_str()]
+        || remote != &plan.remote
+        || local_ref != &plan.cleanup_identity.ref_name
+        || remote_ref != &plan.cleanup_identity.ref_name
+        || local_ref.starts_with('+')
+        || remote_ref.starts_with('+')
+        || *set_upstream
+    {
+        return Err(invalid(
+            "Git command arguments do not match the generated remote-test plan",
+        ));
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

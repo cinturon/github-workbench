@@ -4,6 +4,7 @@ use support::RemoteTestHarness;
 use workbench_application::action_tests::{StoredSessionState, TestSessionStatus};
 use workbench_application::ports::TestSessionStore;
 use workbench_application::use_cases::remote_test::execute_remote_test;
+use workbench_application::AppError;
 use workbench_domain::operations::plan::GitCommand;
 
 #[test]
@@ -122,4 +123,120 @@ fn head_change_is_rejected_before_workflow_or_git_mutation() {
     assert!(!harness.repo.path().join(&plan.workflow_path).exists());
     assert!(harness.git.executed.borrow().is_empty());
     assert!(harness.store.sessions.lock().unwrap().is_empty());
+}
+
+#[test]
+fn changed_remote_url_is_rejected_before_workflow_or_git_mutation() {
+    let harness = RemoteTestHarness::completed_success();
+    let plan = harness.plan();
+    harness.git.snapshot.borrow_mut().remotes[0].url =
+        "git@github.com:attacker/replacement.git".into();
+
+    let error = execute_remote_test(
+        &harness.git,
+        &harness.github,
+        &harness.store,
+        &harness.clock,
+        &harness.ids,
+        &harness.sleeper,
+        &plan,
+        harness.evidence.path(),
+        true,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        AppError::OperationFailed {
+            retry_safe: true,
+            ..
+        }
+    ));
+    assert!(!harness.repo.path().join(&plan.workflow_path).exists());
+    assert!(harness.git.executed.borrow().is_empty());
+}
+
+#[test]
+fn absolute_workflow_path_is_rejected_before_file_or_git_mutation() {
+    let harness = RemoteTestHarness::new();
+    let mut plan = harness.plan();
+    let escaped_path = harness.evidence.path().join("escaped.yml");
+    plan.workflow_path = escaped_path.to_string_lossy().into_owned();
+
+    let error = execute_remote_test(
+        &harness.git,
+        &harness.github,
+        &harness.store,
+        &harness.clock,
+        &harness.ids,
+        &harness.sleeper,
+        &plan,
+        harness.evidence.path(),
+        false,
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, AppError::Usage { .. }));
+    assert!(!escaped_path.exists());
+    assert!(harness.git.executed.borrow().is_empty());
+}
+
+#[test]
+fn unexpected_remote_test_git_command_is_rejected_before_mutation() {
+    let harness = RemoteTestHarness::new();
+    let mut plan = harness.plan();
+    plan.git_plan.commands.insert(
+        0,
+        GitCommand::Fetch {
+            remote: "github".into(),
+        },
+    );
+
+    let error = execute_remote_test(
+        &harness.git,
+        &harness.github,
+        &harness.store,
+        &harness.clock,
+        &harness.ids,
+        &harness.sleeper,
+        &plan,
+        harness.evidence.path(),
+        false,
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, AppError::Usage { .. }));
+    assert!(harness.git.executed.borrow().is_empty());
+}
+
+#[test]
+fn force_marker_in_remote_test_push_ref_is_rejected_before_mutation() {
+    let harness = RemoteTestHarness::new();
+    let mut plan = harness.plan();
+    let GitCommand::PushRef {
+        local_ref,
+        remote_ref,
+        ..
+    } = &mut plan.git_plan.commands[2]
+    else {
+        panic!("expected generated push command");
+    };
+    *local_ref = format!("+{local_ref}");
+    *remote_ref = format!("+{remote_ref}");
+
+    let error = execute_remote_test(
+        &harness.git,
+        &harness.github,
+        &harness.store,
+        &harness.clock,
+        &harness.ids,
+        &harness.sleeper,
+        &plan,
+        harness.evidence.path(),
+        false,
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, AppError::Usage { .. }));
+    assert!(harness.git.executed.borrow().is_empty());
 }

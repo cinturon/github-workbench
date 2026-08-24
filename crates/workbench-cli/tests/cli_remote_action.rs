@@ -169,6 +169,15 @@ exit 9
         )
         .expect("enable local GitHub URL rewrite");
     }
+
+    fn make_log_assertion_fail(&self) {
+        let script = fs::read_to_string(&self.gh_program).expect("read gh fixture");
+        let script = script.replace(
+            r"Run action under test\nUpload completed\n",
+            r"Run action under test\nUnexpected output\n",
+        );
+        fs::write(&self.gh_program, script).expect("update gh fixture");
+    }
 }
 
 #[test]
@@ -241,6 +250,45 @@ fn remote_action_cli_runs_watches_and_cleans_up_a_fixture_session() {
     assert!(stdout(&cleaned).contains("Cleanup completed."));
     assert!(bare_ref(&harness, &remote_ref).is_empty());
     assert!(!bare_ref(&harness, "refs/heads/main").is_empty());
+}
+
+#[test]
+fn assertion_failure_prints_persisted_result_for_execute_and_watch() {
+    let harness = Harness::new();
+    assert_exit(&harness.gww(&["open", "."]), 0, "gww open");
+    harness.enable_remote_mapping();
+    harness.make_log_assertion_fail();
+
+    let tested = harness.gww(&["action", "test", "smoke-composite", "--yes"]);
+    assert_exit(&tested, 1, "gww action test with failed assertion");
+    let tested_stdout = stdout(&tested);
+    for expected in [
+        "Run URL: https://github.com/acme/widgets/actions/runs/42",
+        "Conclusion: success",
+        "Assertions: failed",
+        "Manifest:",
+        "Logs:",
+        "Cleanup: run `gww cleanup list`",
+    ] {
+        assert!(tested_stdout.contains(expected), "{tested_stdout}");
+    }
+    let tested_stderr = String::from_utf8_lossy(&tested.stderr);
+    assert!(!tested_stderr.contains("gww runs show"), "{tested_stderr}");
+    assert!(tested_stderr.contains("gww runs list"), "{tested_stderr}");
+    assert!(tested_stderr.contains("gww runs watch"), "{tested_stderr}");
+
+    let session_id = value_after(&tested_stdout, "Session id: ");
+    let watched = harness.gww(&["runs", "watch", &session_id]);
+    assert_exit(&watched, 1, "gww runs watch with failed assertion");
+    let watched_stdout = stdout(&watched);
+    assert!(
+        watched_stdout.contains("Run URL: https://github.com/acme/widgets/actions/runs/42"),
+        "{watched_stdout}"
+    );
+    assert!(
+        watched_stdout.contains("Assertions: failed"),
+        "{watched_stdout}"
+    );
 }
 
 fn bare_ref(harness: &Harness, reference: &str) -> String {

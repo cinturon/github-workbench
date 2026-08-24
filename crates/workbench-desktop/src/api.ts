@@ -42,6 +42,7 @@ export type TestResult = {
 };
 
 export type StartResponse = {
+  preview_id: string;
   plan: SessionPlan;
   result: TestResult | null;
 };
@@ -57,14 +58,12 @@ export const listActionTests = (repoRoot: string) =>
 export const startActionTest = (
   repoRoot: string,
   testName: string | null,
-  confirmed: boolean,
-  plan: SessionPlan | null,
+  previewId: string | null,
 ) =>
   invoke<StartResponse>("start_action_test", {
     repoRoot,
     testName,
-    confirmed,
-    plan,
+    previewId,
   });
 
 export const watchActionTest = (repoRoot: string, sessionId: string) =>

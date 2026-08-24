@@ -25,6 +25,8 @@ pub struct RemoteTestSessionPlan {
     pub owner: String,
     pub repo: String,
     pub remote: String,
+    #[serde(default)]
+    pub remote_url: String,
     pub base_sha: String,
     pub session_id: String,
     pub workflow_file_name: String,

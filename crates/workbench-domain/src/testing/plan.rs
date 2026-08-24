@@ -73,6 +73,15 @@ pub fn normalize_test_case(
             return Err(TestingError::SecretLikeKey { key: key.clone() });
         }
     }
+    for (scope, values) in [("inputs", &case.inputs), ("environment", &case.environment)] {
+        for (key, value) in values {
+            if value.contains("${{") {
+                return invalid(format!(
+                    "GitHub expressions are not allowed in {scope}.{key}"
+                ));
+            }
+        }
+    }
 
     let allowed_conclusions = ["success", "failure"];
     if !allowed_conclusions.contains(&case.expect.conclusion.as_str()) {

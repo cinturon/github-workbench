@@ -111,6 +111,7 @@ impl RemoteTestHarness {
             executed: RefCell::new(vec![]),
             fail_kind: RefCell::new(None),
             refs: RefCell::new(BTreeMap::from([("HEAD".into(), "abc123".into())])),
+            rev_parse_responses: RefCell::new(Default::default()),
         };
         let store = FakeStore::new();
         store.projects.lock().unwrap().push(ProjectRecord {

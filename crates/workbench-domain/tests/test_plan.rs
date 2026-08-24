@@ -79,6 +79,48 @@ fn rejects_secret_looking_keys_before_remote_mutation() {
 }
 
 #[test]
+fn rejects_github_expressions_in_input_values() {
+    let yaml = MINIMAL.replace(
+        "inputs: {}",
+        "inputs:\n  report-path: '${{ github.workspace }}/report.json'",
+    );
+    let action = parse_action_definition(
+        "action.yml",
+        "name: Smoke\nruns:\n  using: composite\n  steps: []\n",
+    )
+    .unwrap();
+
+    let error = normalize_test_case(parse_test_case_yaml(&yaml).unwrap(), &action, 15).unwrap_err();
+
+    assert!(matches!(
+        error,
+        TestingError::InvalidTestCase { ref detail }
+            if detail.contains("GitHub expressions") && detail.contains("inputs.report-path")
+    ));
+}
+
+#[test]
+fn rejects_github_expressions_in_environment_values() {
+    let yaml = MINIMAL.replace(
+        "environment: {}",
+        "environment:\n  REPORT_PATH: '${{ runner.temp }}/report.json'",
+    );
+    let action = parse_action_definition(
+        "action.yml",
+        "name: Smoke\nruns:\n  using: composite\n  steps: []\n",
+    )
+    .unwrap();
+
+    let error = normalize_test_case(parse_test_case_yaml(&yaml).unwrap(), &action, 15).unwrap_err();
+
+    assert!(matches!(
+        error,
+        TestingError::InvalidTestCase { ref detail }
+            if detail.contains("GitHub expressions") && detail.contains("environment.REPORT_PATH")
+    ));
+}
+
+#[test]
 fn rejects_unknown_fields_and_non_ubuntu_runners() {
     assert!(parse_test_case_yaml(&MINIMAL.replace("inputs: {}", "inputz: {}")).is_err());
 

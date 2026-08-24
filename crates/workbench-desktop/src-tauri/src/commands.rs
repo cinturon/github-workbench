@@ -6,7 +6,7 @@ use workbench_application::action_tests::{RemoteTestResult, RemoteTestSessionPla
 use workbench_application::clock::{SystemClock, ThreadSleeper};
 use workbench_application::ids::UlidGenerator;
 use workbench_application::policy_source::FilePolicySource;
-use workbench_application::ports::GitClient;
+use workbench_application::ports::{GitClient, IdGenerator};
 use workbench_application::use_cases::action_discovery::{
     discover_action_tests, ActionTestCatalog,
 };
@@ -19,10 +19,11 @@ use workbench_git::{ProcessGitClient, StdProcessRunner};
 use workbench_github::ProcessGithubClient;
 use workbench_storage::SqliteStore;
 
-use crate::DesktopState;
+use crate::{DesktopState, PreviewPlans};
 
 #[derive(Debug, Serialize)]
 pub struct StartActionTestResponse {
+    pub preview_id: String,
     pub plan: RemoteTestSessionPlan,
     pub result: Option<RemoteTestResult>,
 }
@@ -47,17 +48,17 @@ pub async fn start_action_test(
     state: State<'_, DesktopState>,
     repo_root: String,
     test_name: Option<String>,
-    confirmed: bool,
-    plan: Option<RemoteTestSessionPlan>,
+    preview_id: Option<String>,
 ) -> Result<StartActionTestResponse, String> {
     let data_dir = state.data_dir().to_path_buf();
+    let preview_plans = state.preview_plans();
     run_blocking(move || {
         start_action_test_from_root(
             &data_dir,
             Path::new(&repo_root),
             test_name.as_deref(),
-            confirmed,
-            plan,
+            preview_id.as_deref(),
+            &preview_plans,
         )
     })
     .await
@@ -93,8 +94,8 @@ fn start_action_test_from_root(
     data_dir: &Path,
     repo_root: &Path,
     test_name: Option<&str>,
-    confirmed: bool,
-    reviewed_plan: Option<RemoteTestSessionPlan>,
+    preview_id: Option<&str>,
+    preview_plans: &PreviewPlans,
 ) -> Result<StartActionTestResponse, AppError> {
     let git = ProcessGitClient::new(StdProcessRunner);
     let store = open_store(data_dir)?;
@@ -102,27 +103,46 @@ fn start_action_test_from_root(
     let clock = SystemClock;
     let ids = UlidGenerator;
     let sleeper = ThreadSleeper;
-    let plan = if confirmed {
-        let plan = reviewed_plan.ok_or_else(|| AppError::Usage {
-            message: "confirmation requires the reviewed remote-test plan".into(),
-        })?;
+    let (preview_id, plan) = if let Some(preview_id) = preview_id {
+        if test_name.is_some() {
+            return Err(AppError::Usage {
+                message: "confirmation accepts only a preview id".into(),
+            });
+        }
         let root = git.resolve_toplevel(repo_root)?;
+        let plan = preview_plans
+            .lock()
+            .map_err(|_| AppError::Storage {
+                detail: "desktop preview-plan store is unavailable".into(),
+            })?
+            .remove(preview_id)
+            .ok_or_else(|| AppError::Usage {
+                message: "the desktop preview id is missing, expired, or already used".into(),
+            })?;
         if plan.repo_root != root {
             return Err(AppError::Usage {
                 message: "the reviewed remote-test plan belongs to a different repository".into(),
             });
         }
-        plan
+        (preview_id.to_string(), plan)
     } else {
         let test_name = test_name.ok_or_else(|| AppError::Usage {
             message: "preview requires an Action Test name".into(),
         })?;
-        plan_remote_test(&git, &store, &policy, &ids, repo_root, test_name, None)?
+        let plan = plan_remote_test(&git, &store, &policy, &ids, repo_root, test_name, None)?;
+        let preview_id = ids.next().to_string();
+        preview_plans
+            .lock()
+            .map_err(|_| AppError::Storage {
+                detail: "desktop preview-plan store is unavailable".into(),
+            })?
+            .insert(preview_id.clone(), plan.clone());
+        return Ok(StartActionTestResponse {
+            preview_id,
+            plan,
+            result: None,
+        });
     };
-
-    if !confirmed {
-        return Ok(StartActionTestResponse { plan, result: None });
-    }
 
     let github = ProcessGithubClient::new(StdProcessRunner, plan.repo_root.clone());
     let result = match execute_remote_test(
@@ -144,7 +164,11 @@ fn start_action_test_from_root(
         Err(error) => return Err(error),
     };
 
-    Ok(StartActionTestResponse { plan, result })
+    Ok(StartActionTestResponse {
+        preview_id,
+        plan,
+        result,
+    })
 }
 
 fn watch_action_test_from_root(
