@@ -199,6 +199,7 @@ impl GitClient for FakeGit {
 
 pub struct FakeGithub {
     pub auth_error: Mutex<Option<AppError>>,
+    pub delete_ref_actual_sha: Mutex<Option<String>>,
     pub run_list_responses: Mutex<VecDeque<Result<Vec<WorkflowRunSummary>, AppError>>>,
     pub run_detail_responses: Mutex<VecDeque<Result<WorkflowRunDetail, AppError>>>,
     pub artifact_fixture: Mutex<Vec<u8>>,
@@ -210,6 +211,7 @@ impl FakeGithub {
     pub fn new() -> Self {
         Self {
             auth_error: Mutex::new(None),
+            delete_ref_actual_sha: Mutex::new(None),
             run_list_responses: Mutex::new(VecDeque::new()),
             run_detail_responses: Mutex::new(VecDeque::new()),
             artifact_fixture: Mutex::new(Vec::new()),
@@ -239,6 +241,33 @@ impl GithubClient for FakeGithub {
         match self.auth_error.lock().unwrap().clone() {
             Some(error) => Err(error),
             None => Ok(()),
+        }
+    }
+
+    fn delete_ref_if_sha_matches(
+        &self,
+        owner: &str,
+        repo: &str,
+        ref_name: &str,
+        expected_sha: &str,
+    ) -> Result<(), AppError> {
+        self.record(format!(
+            "delete-ref {owner}/{repo} {ref_name} {expected_sha}"
+        ));
+        let actual = self
+            .delete_ref_actual_sha
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| expected_sha.into());
+        if actual == expected_sha {
+            Ok(())
+        } else {
+            Err(AppError::CleanupRefMoved {
+                ref_name: ref_name.into(),
+                expected: expected_sha.into(),
+                actual,
+            })
         }
     }
 

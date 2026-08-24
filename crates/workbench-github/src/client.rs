@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
 use workbench_application::ports::{
     CommandOutput, CommandSpec, GithubClient, ProcessRunner, WorkflowRunDetail, WorkflowRunSummary,
 };
@@ -8,6 +9,16 @@ use workbench_application::AppError;
 
 use crate::env::sanitized_env;
 use crate::parser::{parse_run, parse_runs};
+
+#[derive(Deserialize)]
+struct RefResponse {
+    object: RefObject,
+}
+
+#[derive(Deserialize)]
+struct RefObject {
+    sha: String,
+}
 
 pub struct ProcessGithubClient<R> {
     runner: R,
@@ -102,6 +113,48 @@ impl<R: ProcessRunner> GithubClient for ProcessGithubClient<R> {
                 detail: bound_output(&redact(&output.stderr)),
             })
         }
+    }
+
+    fn delete_ref_if_sha_matches(
+        &self,
+        owner: &str,
+        repo: &str,
+        ref_name: &str,
+        expected_sha: &str,
+    ) -> Result<(), AppError> {
+        let get_args = vec![
+            "api".into(),
+            "--method".into(),
+            "GET".into(),
+            format!("repos/{owner}/{repo}/git/ref/heads/{ref_name}"),
+        ];
+        let output = self.checked(get_args)?;
+        let response: RefResponse =
+            serde_json::from_str(&output.stdout).map_err(|error| AppError::GithubFailed {
+                program: self.gh_program.clone(),
+                args_summary: "parse GitHub ref response".into(),
+                status: 0,
+                stderr_redacted: bound_output(&redact(&error.to_string())),
+            })?;
+        if response.object.sha != expected_sha {
+            return Err(AppError::CleanupRefMoved {
+                ref_name: ref_name.into(),
+                expected: expected_sha.into(),
+                actual: response.object.sha,
+            });
+        }
+
+        // GitHub's REST delete-ref endpoint has no documented SHA precondition.
+        // This authoritative GET check substantially narrows the race compared
+        // with an unconditional Git push deletion, though a residual GET/DELETE
+        // race remains.
+        self.checked(vec![
+            "api".into(),
+            "--method".into(),
+            "DELETE".into(),
+            format!("repos/{owner}/{repo}/git/refs/heads/{ref_name}"),
+        ])?;
+        Ok(())
     }
 
     fn list_workflow_runs(

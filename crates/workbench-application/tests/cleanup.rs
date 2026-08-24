@@ -8,68 +8,8 @@ use workbench_domain::operations::plan::{GitCommand, RiskClass};
 
 #[test]
 fn cleanup_ref_move_is_refused_without_delete() {
-    let harness = RemoteTestHarness::cleanup_with_remote_sha("moved-sha");
-
-    let error = execute_cleanup(
-        &harness.git,
-        &harness.github,
-        &harness.store,
-        &harness.clock,
-        &harness.ids,
-        harness.repo.path(),
-        "cleanup-1",
-    )
-    .unwrap_err();
-
-    assert!(matches!(error, AppError::CleanupRefMoved { .. }));
-    assert!(harness
-        .git
-        .executed
-        .borrow()
-        .iter()
-        .all(|command| { !matches!(command, GitCommand::DeleteRemoteRef { .. }) }));
-}
-
-#[test]
-fn cleanup_ref_move_between_pre_delete_checks_is_refused() {
     let harness = RemoteTestHarness::cleanup_with_remote_sha("abc123");
-    harness
-        .git
-        .rev_parse_responses
-        .borrow_mut()
-        .extend([Some("abc123".into()), Some("moved-sha".into())]);
-
-    let error = execute_cleanup(
-        &harness.git,
-        &harness.github,
-        &harness.store,
-        &harness.clock,
-        &harness.ids,
-        harness.repo.path(),
-        "cleanup-1",
-    )
-    .unwrap_err();
-
-    assert!(matches!(
-        error,
-        AppError::CleanupRefMoved { actual, .. } if actual == "moved-sha"
-    ));
-    assert!(harness
-        .git
-        .executed
-        .borrow()
-        .iter()
-        .all(|command| { !matches!(command, GitCommand::DeleteRemoteRef { .. }) }));
-}
-
-#[test]
-fn cleanup_ref_recreated_after_delete_is_reported_and_left_pending() {
-    let harness = RemoteTestHarness::cleanup_with_remote_sha("abc123");
-    harness.git.rev_parse_responses.borrow_mut().extend([
-        Some("abc123".into()),
-        Some("abc123".into()),
-        Some("moved-sha".into()),
-    ]);
+    *harness.github.delete_ref_actual_sha.lock().unwrap() = Some("moved-sha".into());
 
     let error = execute_cleanup(
         &harness.git,
@@ -87,6 +27,14 @@ fn cleanup_ref_recreated_after_delete_is_reported_and_left_pending() {
         AppError::CleanupRefMoved { actual, .. } if actual == "moved-sha"
     ));
     assert_eq!(
+        harness.github.calls(),
+        vec![
+            "auth",
+            "delete-ref acme/widgets github-workbench/test/01JABC abc123"
+        ]
+    );
+    assert!(harness.git.executed.borrow().is_empty());
+    assert_eq!(
         harness
             .store
             .get_cleanup_item("project-1", "cleanup-1")
@@ -98,7 +46,7 @@ fn cleanup_ref_recreated_after_delete_is_reported_and_left_pending() {
 }
 
 #[test]
-fn matching_cleanup_fetches_deletes_journals_and_completes() {
+fn matching_cleanup_deletes_through_github_journals_and_completes() {
     let harness = RemoteTestHarness::cleanup_with_remote_sha("abc123");
 
     let outcome = execute_cleanup(
@@ -113,26 +61,26 @@ fn matching_cleanup_fetches_deletes_journals_and_completes() {
     .unwrap();
 
     assert_eq!(outcome.status, "succeeded");
-    assert!(matches!(
-        harness.git.executed.borrow().as_slice(),
-        [
-            GitCommand::Fetch { remote },
-            GitCommand::Fetch {
-                remote: second_fetch_remote,
-            },
-            GitCommand::DeleteRemoteRef {
-                remote: delete_remote,
-                ref_name,
-            },
-            GitCommand::Fetch {
-                remote: final_fetch_remote,
-            },
-        ] if remote == "github"
-            && second_fetch_remote == "github"
-            && delete_remote == "github"
-            && ref_name == "github-workbench/test/01JABC"
-            && final_fetch_remote == "github"
-    ));
+    assert_eq!(
+        harness.github.calls(),
+        vec![
+            "auth",
+            "delete-ref acme/widgets github-workbench/test/01JABC abc123"
+        ]
+    );
+    assert!(harness
+        .git
+        .executed
+        .borrow()
+        .iter()
+        .all(|command| !matches!(command, GitCommand::DeleteRemoteRef { .. })));
+    let operations = harness.store.operations.lock().unwrap();
+    assert_eq!(operations.len(), 1);
+    assert_eq!(operations[0].steps.len(), 1);
+    assert_eq!(
+        operations[0].steps[0].kind,
+        "delete-github-ref-if-sha-matches"
+    );
     assert_eq!(
         harness
             .store
@@ -180,13 +128,11 @@ fn cleanup_listing_and_plan_are_project_scoped_and_delete_only() {
 
     assert_eq!(items, vec![item]);
     assert_eq!(plan.risk, RiskClass::Medium);
-    assert_eq!(
-        plan.commands,
-        vec![GitCommand::DeleteRemoteRef {
-            remote: "github".into(),
-            ref_name: "github-workbench/test/01JABC".into(),
-        }]
-    );
+    assert!(plan.commands.is_empty());
+    assert!(plan
+        .rationale
+        .iter()
+        .any(|line| line.contains("GitHub API")));
     assert_eq!(snapshot.root, harness.repo.path().to_string_lossy());
     assert!(harness.git.executed.borrow().is_empty());
 }

@@ -101,6 +101,14 @@ pub struct WorkflowRunDetail {
 pub trait GithubClient {
     fn auth_status(&self) -> Result<(), AppError>;
 
+    fn delete_ref_if_sha_matches(
+        &self,
+        owner: &str,
+        repo: &str,
+        ref_name: &str,
+        expected_sha: &str,
+    ) -> Result<(), AppError>;
+
     fn list_workflow_runs(
         &self,
         owner: &str,

@@ -66,6 +66,58 @@ fn only_call(client: &ProcessGithubClient<RecordingRunner>) -> CommandSpec {
 }
 
 #[test]
+fn deletes_ref_after_matching_sha_with_argv_only() {
+    let client = fixture_client([
+        output(0, r#"{"object":{"sha":"abc123"}}"#, ""),
+        output(0, "", ""),
+    ]);
+
+    client
+        .delete_ref_if_sha_matches("acme", "widgets", "github-workbench/test/01JABC", "abc123")
+        .unwrap();
+
+    let calls = client.runner().calls.borrow();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(
+        calls[0].args,
+        vec![
+            "api",
+            "--method",
+            "GET",
+            "repos/acme/widgets/git/ref/heads/github-workbench/test/01JABC",
+        ]
+    );
+    assert_eq!(
+        calls[1].args,
+        vec![
+            "api",
+            "--method",
+            "DELETE",
+            "repos/acme/widgets/git/refs/heads/github-workbench/test/01JABC",
+        ]
+    );
+}
+
+#[test]
+fn moved_ref_is_not_deleted() {
+    let client = fixture_client([output(0, r#"{"object":{"sha":"moved-sha"}}"#, "")]);
+
+    let error = client
+        .delete_ref_if_sha_matches("acme", "widgets", "github-workbench/test/01JABC", "abc123")
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        AppError::CleanupRefMoved {
+            ref_name: "github-workbench/test/01JABC".into(),
+            expected: "abc123".into(),
+            actual: "moved-sha".into(),
+        }
+    );
+    assert_eq!(client.runner().calls.borrow().len(), 1);
+}
+
+#[test]
 fn lists_and_filters_runs_with_argv_only() {
     let client = fixture_client([output(0, include_str!("fixtures/workflow_runs.json"), "")]);
 

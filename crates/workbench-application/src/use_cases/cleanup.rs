@@ -1,15 +1,16 @@
 use std::path::Path;
 
 use ulid::Ulid;
-use workbench_domain::operations::plan::{GitCommand, OperationPlan, RiskClass};
+use workbench_domain::operations::plan::{OperationPlan, RiskClass, StepStatus};
 use workbench_domain::repository::RepositorySnapshot;
 
 use crate::action_tests::{ExpectedRemoteRef, StoredSessionState};
-use crate::executor::{execute_plan, ExecuteOutcome};
+use crate::executor::ExecuteOutcome;
 use crate::ports::{
     CleanupItemRecord, Clock, GitClient, GithubClient, IdGenerator, OperationStore,
     TestSessionStore,
 };
+use crate::redact::{bound_output, redact};
 use crate::use_cases::test_sessions::resolve_project;
 use crate::AppError;
 
@@ -83,68 +84,122 @@ where
         })?;
     validate_expected_identity(&item, &expected, &state)?;
 
+    let owner = project
+        .owner
+        .as_deref()
+        .ok_or(AppError::RepositoryNotMapped)?;
+    let repo = project
+        .repo
+        .as_deref()
+        .ok_or(AppError::RepositoryNotMapped)?;
     github.auth_status()?;
-    let remote_tracking_ref = format!(
-        "refs/remotes/{}/{}",
-        expected.identity.remote, expected.identity.ref_name
-    );
-    verify_remote_tip(git, &root, &expected, &remote_tracking_ref)?;
-    verify_remote_tip(git, &root, &expected, &remote_tracking_ref)?;
-
     let mut snapshot = git.snapshot(&root)?;
     snapshot.selected_remote = Some(expected.identity.remote.clone());
     let plan = cleanup_plan(&item, &expected);
-    let outcome = execute_plan(git, store, clock, ids, &project.id, &snapshot, &plan)?;
-
-    // Git has no non-force compare-and-delete push. A ref can still move in the
-    // residual TOCTOU window after the second check; detect and surface a
-    // surviving/recreated ref immediately instead of marking cleanup complete.
-    git.fetch(&root, &expected.identity.remote)?;
-    if let Some(actual) = git.rev_parse(&root, &remote_tracking_ref)? {
-        if actual != expected.commit_sha {
-            return Err(ref_moved(&expected, actual));
-        }
-        return Err(AppError::OperationFailed {
-            message: format!(
-                "Cleanup ref `{}` still exists at `{}` after deletion.",
-                expected.identity.ref_name, actual
-            ),
-            changed: vec!["The remote-ref deletion was attempted and journaled.".into()],
-            unchanged: vec!["The cleanup item remains pending.".into()],
-            retry_safe: false,
-            remediation: "Inspect the remote ref before attempting cleanup again.".into(),
-        });
-    }
-
+    let outcome = execute_github_ref_cleanup(
+        github,
+        store,
+        clock,
+        ids,
+        &project.id,
+        &snapshot,
+        &plan,
+        owner,
+        repo,
+        &expected,
+    )?;
     let now = clock.now_rfc3339();
     store.complete_cleanup_item(&item.id, &now)?;
     Ok(outcome)
 }
 
-fn verify_remote_tip<G: GitClient>(
-    git: &G,
-    root: &Path,
+#[allow(clippy::too_many_arguments)]
+fn execute_github_ref_cleanup<H, S, C, I>(
+    github: &H,
+    store: &S,
+    clock: &C,
+    ids: &I,
+    project_id: &str,
+    snapshot: &RepositorySnapshot,
+    plan: &OperationPlan,
+    owner: &str,
+    repo: &str,
     expected: &ExpectedRemoteRef,
-    remote_tracking_ref: &str,
-) -> Result<(), AppError> {
-    git.fetch(root, &expected.identity.remote)?;
-    let actual = git.rev_parse(root, remote_tracking_ref)?;
-    if actual.as_deref() == Some(expected.commit_sha.as_str()) {
-        Ok(())
-    } else {
-        Err(ref_moved(
-            expected,
-            actual.unwrap_or_else(|| "<missing>".into()),
-        ))
-    }
-}
+) -> Result<ExecuteOutcome, AppError>
+where
+    H: GithubClient,
+    S: OperationStore,
+    C: Clock,
+    I: IdGenerator,
+{
+    let operation_id = ids.next().to_string();
+    let started_at = clock.now_rfc3339();
+    store.create_operation(
+        project_id,
+        &operation_id,
+        &plan.kind,
+        "running",
+        plan,
+        snapshot,
+        &started_at,
+    )?;
 
-fn ref_moved(expected: &ExpectedRemoteRef, actual: String) -> AppError {
-    AppError::CleanupRefMoved {
-        ref_name: expected.identity.ref_name.clone(),
-        expected: expected.commit_sha.clone(),
-        actual,
+    let step_id = ids.next().to_string();
+    let detail_json = serde_json::to_string(&serde_json::json!({
+        "type": "delete-github-ref-if-sha-matches",
+        "owner": owner,
+        "repo": repo,
+        "ref_name": expected.identity.ref_name,
+        "expected_sha": expected.commit_sha,
+    }))
+    .map_err(|error| AppError::Storage {
+        detail: format!("could not serialize cleanup operation step: {error}"),
+    })?;
+    store.append_step(
+        &operation_id,
+        &step_id,
+        1,
+        "delete-github-ref-if-sha-matches",
+        StepStatus::Pending,
+        Some(&detail_json),
+        &started_at,
+    )?;
+    store.update_step(&step_id, StepStatus::Running, None, None)?;
+
+    if let Err(error) = github.delete_ref_if_sha_matches(
+        owner,
+        repo,
+        &expected.identity.ref_name,
+        &expected.commit_sha,
+    ) {
+        let completed_at = clock.now_rfc3339();
+        let output = bound_output(&redact(&error.to_string()));
+        store.update_step(
+            &step_id,
+            StepStatus::Failed,
+            Some(&output),
+            Some(&completed_at),
+        )?;
+        store.update_operation(&operation_id, "failed", Some(&completed_at))?;
+        return Err(error);
     }
+
+    let completed_at = clock.now_rfc3339();
+    store.update_step(
+        &step_id,
+        StepStatus::Succeeded,
+        Some("Matched the recorded SHA and deleted the ref through the GitHub API."),
+        Some(&completed_at),
+    )?;
+    store.update_operation(&operation_id, "succeeded", Some(&completed_at))?;
+    Ok(ExecuteOutcome {
+        operation_id,
+        status: "succeeded".into(),
+        changed: vec![format!(
+            "Deleted temporary GitHub ref `{owner}/{repo}:heads/{}` after matching `{}`.",
+            expected.identity.ref_name, expected.commit_sha
+        )],
+    })
 }
 
 fn cleanup_plan(item: &CleanupItemRecord, expected: &ExpectedRemoteRef) -> OperationPlan {
@@ -161,15 +216,15 @@ fn cleanup_plan(item: &CleanupItemRecord, expected: &ExpectedRemoteRef) -> Opera
                 "Cleanup item `{}` recorded this temporary test ref.",
                 item.id
             ),
-            "The ref will be deleted only if its commit still matches the recorded SHA.".into(),
+            "The GitHub API reads the authoritative ref SHA and requests deletion only when it matches the recorded SHA.".into(),
+            "GitHub's REST API has a residual race between that read and deletion because it exposes no documented SHA precondition.".into(),
         ],
-        commands: vec![GitCommand::DeleteRemoteRef {
-            remote: expected.identity.remote.clone(),
-            ref_name: expected.identity.ref_name.clone(),
-        }],
+        commands: vec![],
         preconditions: vec![format!(
-            "`{}/{}` still resolves to `{}`.",
-            expected.identity.remote, expected.identity.ref_name, expected.commit_sha
+            "GitHub `heads/{}` still resolves to `{}` (remote `{}`).",
+            expected.identity.ref_name,
+            expected.commit_sha,
+            expected.identity.remote
         )],
         findings: vec![],
     }
