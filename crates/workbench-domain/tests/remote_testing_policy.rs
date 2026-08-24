@@ -1,19 +1,11 @@
-use workbench_domain::policy::{
-    github_flow_defaults, parse_policy_yaml, RetentionHours,
-};
+use workbench_domain::policy::{github_flow_defaults, parse_policy_yaml, RetentionHours};
 
 #[test]
 fn phase_three_defaults_are_safe() {
     let policy = github_flow_defaults();
 
-    assert_eq!(
-        policy.remote_testing.isolation,
-        "ephemeral-branch"
-    );
-    assert_eq!(
-        policy.remote_testing.branch_prefix,
-        "github-workbench/test"
-    );
+    assert_eq!(policy.remote_testing.isolation, "ephemeral-branch");
+    assert_eq!(policy.remote_testing.branch_prefix, "github-workbench/test");
     assert_eq!(policy.remote_testing.max_matrix_jobs, 6);
     assert_eq!(policy.remote_testing.default_timeout_minutes, 15);
     assert_eq!(

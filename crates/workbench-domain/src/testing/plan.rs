@@ -3,9 +3,7 @@ use std::path::{Component, Path};
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    ActionDefinition, ActionRuntime, TestCase, TestPermissions, TestingError,
-};
+use super::{ActionDefinition, ActionRuntime, TestCase, TestPermissions, TestingError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestPlan {
@@ -54,8 +52,10 @@ pub fn normalize_test_case(
         return invalid("runner.os must contain only ubuntu-latest".into());
     }
 
-    let timeout_minutes =
-        case.runner.timeout_minutes.unwrap_or(default_timeout_minutes);
+    let timeout_minutes = case
+        .runner
+        .timeout_minutes
+        .unwrap_or(default_timeout_minutes);
     if timeout_minutes == 0 {
         return invalid("runner.timeout-minutes must be greater than zero".into());
     }
@@ -88,12 +88,7 @@ pub fn normalize_test_case(
         match (expectation.contains, expectation.not_contains) {
             (Some(value), None) => log_contains.push(value),
             (None, Some(value)) => log_not_contains.push(value),
-            _ => {
-                return invalid(
-                    "each expect.logs item must contain exactly one matcher"
-                        .into(),
-                )
-            }
+            _ => return invalid("each expect.logs item must contain exactly one matcher".into()),
         }
     }
 
@@ -116,14 +111,12 @@ pub fn normalize_test_case(
 
 fn validate_name(name: &str) -> Result<(), TestingError> {
     if name.is_empty()
-        || !name
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric()
-                || matches!(character, '-' | '_' | '.'))
+        || !name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
     {
         return invalid(
-            "name must contain only ASCII letters, digits, dash, underscore, or dot"
-                .into(),
+            "name must contain only ASCII letters, digits, dash, underscore, or dot".into(),
         );
     }
     Ok(())
@@ -135,9 +128,7 @@ fn validate_relative_path(value: &str) -> Result<(), TestingError> {
         || path.components().any(|component| {
             matches!(
                 component,
-                Component::ParentDir
-                    | Component::RootDir
-                    | Component::Prefix(_)
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
             )
         })
     {

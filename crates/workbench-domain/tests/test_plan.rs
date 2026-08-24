@@ -1,6 +1,5 @@
 use workbench_domain::testing::{
-    normalize_test_case, parse_action_definition, parse_test_case_yaml,
-    TestingError,
+    normalize_test_case, parse_action_definition, parse_test_case_yaml, TestingError,
 };
 
 const MINIMAL: &str = r#"
@@ -52,8 +51,7 @@ fn rejects_non_composite_actions() {
     .unwrap();
 
     let error =
-        normalize_test_case(parse_test_case_yaml(MINIMAL).unwrap(), &action, 15)
-            .unwrap_err();
+        normalize_test_case(parse_test_case_yaml(MINIMAL).unwrap(), &action, 15).unwrap_err();
 
     assert!(matches!(
         error,
@@ -64,19 +62,14 @@ fn rejects_non_composite_actions() {
 
 #[test]
 fn rejects_secret_looking_keys_before_remote_mutation() {
-    let yaml = MINIMAL.replace(
-        "environment: {}",
-        "environment:\n  DEPLOY_TOKEN: value",
-    );
+    let yaml = MINIMAL.replace("environment: {}", "environment:\n  DEPLOY_TOKEN: value");
     let action = parse_action_definition(
         "action.yml",
         "name: Smoke\nruns:\n  using: composite\n  steps: []\n",
     )
     .unwrap();
 
-    let error =
-        normalize_test_case(parse_test_case_yaml(&yaml).unwrap(), &action, 15)
-            .unwrap_err();
+    let error = normalize_test_case(parse_test_case_yaml(&yaml).unwrap(), &action, 15).unwrap_err();
 
     assert!(matches!(
         error,
@@ -87,11 +80,7 @@ fn rejects_secret_looking_keys_before_remote_mutation() {
 
 #[test]
 fn rejects_unknown_fields_and_non_ubuntu_runners() {
-    assert!(parse_test_case_yaml(&MINIMAL.replace(
-        "inputs: {}",
-        "inputz: {}"
-    ))
-    .is_err());
+    assert!(parse_test_case_yaml(&MINIMAL.replace("inputs: {}", "inputz: {}")).is_err());
 
     let action = parse_action_definition(
         "action.yml",
@@ -100,10 +89,5 @@ fn rejects_unknown_fields_and_non_ubuntu_runners() {
     .unwrap();
     let windows = MINIMAL.replace("ubuntu-latest", "windows-latest");
 
-    assert!(normalize_test_case(
-        parse_test_case_yaml(&windows).unwrap(),
-        &action,
-        15,
-    )
-    .is_err());
+    assert!(normalize_test_case(parse_test_case_yaml(&windows).unwrap(), &action, 15,).is_err());
 }

@@ -55,10 +55,7 @@ fn migration_two_round_trips_sessions_and_cleanup() {
         })
         .unwrap();
 
-    assert_eq!(
-        store.list_cleanup_items("project-1").unwrap().len(),
-        1
-    );
+    assert_eq!(store.list_cleanup_items("project-1").unwrap().len(), 1);
 }
 
 #[test]

@@ -5,9 +5,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use workbench_application::action_tests::TestSessionStatus;
 use workbench_application::error::AppError;
 use workbench_application::ports::{
-    CleanupItemRecord, NewCleanupItem, NewProject, NewTestSession, OperationRecord,
-    OperationStore, ProjectRecord, StepRecord, TestSessionRecord, TestSessionStore,
-    TestSessionUpdate,
+    CleanupItemRecord, NewCleanupItem, NewProject, NewTestSession, OperationRecord, OperationStore,
+    ProjectRecord, StepRecord, TestSessionRecord, TestSessionStore, TestSessionUpdate,
 };
 use workbench_domain::operations::plan::{OperationPlan, StepStatus};
 use workbench_domain::repository::RepositorySnapshot;

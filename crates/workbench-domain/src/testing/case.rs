@@ -45,9 +45,7 @@ pub struct TestPermissions {
 
 impl Default for TestPermissions {
     fn default() -> Self {
-        Self {
-            contents: read(),
-        }
+        Self { contents: read() }
     }
 }
 

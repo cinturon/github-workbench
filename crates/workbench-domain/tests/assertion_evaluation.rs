@@ -1,6 +1,4 @@
-use workbench_domain::testing::{
-    evaluate_assertions, TestAssertions,
-};
+use workbench_domain::testing::{evaluate_assertions, TestAssertions};
 
 fn assertions() -> TestAssertions {
     TestAssertions {

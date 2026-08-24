@@ -1,7 +1,6 @@
 use workbench_domain::testing::{
-    generate_workflow, normalize_test_case, parse_action_definition,
-    parse_test_case_yaml, remote_test_branch, workflow_file_path,
-    RESULT_ARTIFACT_NAME,
+    generate_workflow, normalize_test_case, parse_action_definition, parse_test_case_yaml,
+    remote_test_branch, workflow_file_path, RESULT_ARTIFACT_NAME,
 };
 
 #[test]
@@ -36,10 +35,7 @@ expect:
     let branch = remote_test_branch("github-workbench/test", session).unwrap();
     let workflow = generate_workflow(&plan, session, &branch).unwrap();
 
-    assert_eq!(
-        branch,
-        "github-workbench/test/01JABCDEF0123456789ABCDEFG"
-    );
+    assert_eq!(branch, "github-workbench/test/01JABCDEF0123456789ABCDEFG");
     assert_eq!(
         workflow_file_path(session).unwrap(),
         ".github/workflows/github-workbench-test-01JABCDEF0123456789ABCDEFG.yml"

@@ -1,6 +1,4 @@
-use workbench_domain::testing::{
-    parse_action_definition, ActionRuntime, TestingError,
-};
+use workbench_domain::testing::{parse_action_definition, ActionRuntime, TestingError};
 
 #[test]
 fn parses_a_composite_action_without_interpreting_steps() {
@@ -51,8 +49,7 @@ runs:
 
 #[test]
 fn reports_invalid_action_yaml_structurally() {
-    let error = parse_action_definition("action.yml", "name: missing-runs")
-        .unwrap_err();
+    let error = parse_action_definition("action.yml", "name: missing-runs").unwrap_err();
 
     assert!(matches!(
         error,

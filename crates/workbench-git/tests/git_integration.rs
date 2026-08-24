@@ -223,10 +223,7 @@ fn commit_paths_push_rev_parse_and_delete_remote_ref() {
     client.fetch(&root, &remote_name).unwrap();
 
     let fetched_sha = client
-        .rev_parse(
-            &root,
-            &format!("refs/remotes/{remote_name}/{remote_ref}"),
-        )
+        .rev_parse(&root, &format!("refs/remotes/{remote_name}/{remote_ref}"))
         .unwrap()
         .expect("pushed ref should resolve after fetch");
     assert_eq!(fetched_sha, pushed_sha);

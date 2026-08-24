@@ -7,18 +7,13 @@ use super::{TestPlan, TestingError};
 pub const RESULT_ARTIFACT_NAME: &str = "github-workbench-result";
 pub const RESULT_MANIFEST_FILE: &str = "github-workbench-result.json";
 
-pub fn remote_test_branch(
-    prefix: &str,
-    session_id: &str,
-) -> Result<String, TestingError> {
+pub fn remote_test_branch(prefix: &str, session_id: &str) -> Result<String, TestingError> {
     validate_identifier(prefix, "branch prefix")?;
     validate_identifier(session_id, "session id")?;
     Ok(format!("{prefix}/{session_id}"))
 }
 
-pub fn workflow_file_path(
-    session_id: &str,
-) -> Result<String, TestingError> {
+pub fn workflow_file_path(session_id: &str) -> Result<String, TestingError> {
     validate_identifier(session_id, "session id")?;
     Ok(format!(
         ".github/workflows/github-workbench-test-{session_id}.yml"
@@ -109,10 +104,7 @@ pub fn generate_workflow(
             name: "Propagate action outcome".into(),
             id: None,
             uses: None,
-            run: Some(
-                "test \"${{ steps.action-under-test.outcome }}\" = success"
-                    .into(),
-            ),
+            run: Some("test \"${{ steps.action-under-test.outcome }}\" = success".into()),
             shell: Some("bash".into()),
             continue_on_error: None,
             if_condition: Some("always()".into()),
@@ -145,17 +137,12 @@ pub fn generate_workflow(
         )]),
     };
 
-    serde_yaml::to_string(&document).map_err(|error| {
-        TestingError::WorkflowGeneration {
-            detail: error.to_string(),
-        }
+    serde_yaml::to_string(&document).map_err(|error| TestingError::WorkflowGeneration {
+        detail: error.to_string(),
     })
 }
 
-fn validate_identifier(
-    value: &str,
-    description: &str,
-) -> Result<(), TestingError> {
+fn validate_identifier(value: &str, description: &str) -> Result<(), TestingError> {
     let invalid = value.is_empty()
         || value.starts_with('/')
         || value.ends_with('/')

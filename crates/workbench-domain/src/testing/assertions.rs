@@ -80,9 +80,7 @@ pub fn evaluate_assertions(
                 rule: "manifest.required".into(),
                 expected: "github-workbench-result artifact".into(),
                 actual: "manifest missing".into(),
-                remediation: format!(
-                    "Open {run_url} and inspect the artifact-upload step."
-                ),
+                remediation: format!("Open {run_url} and inspect the artifact-upload step."),
             });
             None
         }
@@ -94,9 +92,7 @@ pub fn evaluate_assertions(
                 rule: "manifest.action-outcome".into(),
                 expected: assertions.conclusion.clone(),
                 actual: manifest.action_outcome.clone(),
-                remediation: format!(
-                    "Inspect the action and manifest steps at {run_url}."
-                ),
+                remediation: format!("Inspect the action and manifest steps at {run_url}."),
             });
         }
     }
@@ -107,9 +103,7 @@ pub fn evaluate_assertions(
                 rule: "logs.contains".into(),
                 expected: needle.clone(),
                 actual: "substring absent".into(),
-                remediation: format!(
-                    "Inspect downloaded logs or open {run_url}."
-                ),
+                remediation: format!("Inspect downloaded logs or open {run_url}."),
             });
         }
     }
@@ -120,9 +114,7 @@ pub fn evaluate_assertions(
                 rule: "logs.not-contains".into(),
                 expected: format!("absence of {needle}"),
                 actual: "substring present".into(),
-                remediation: format!(
-                    "Inspect downloaded logs or open {run_url}."
-                ),
+                remediation: format!("Inspect downloaded logs or open {run_url}."),
             });
         }
     }
