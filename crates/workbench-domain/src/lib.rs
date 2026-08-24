@@ -6,3 +6,5 @@ pub mod policy;
 pub mod repository;
 pub mod testing;
 pub mod workflow;
+
+pub use error::WorkbenchError;
