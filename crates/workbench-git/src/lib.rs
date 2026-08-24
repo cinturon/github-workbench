@@ -6,7 +6,7 @@ pub mod env;
 pub mod parser;
 pub mod process;
 
-pub use argv::{assert_no_force, command_argv, describe_command};
+pub use argv::{assert_no_force, command_argv, command_argvs, describe_command};
 pub use client::ProcessGitClient;
 pub use env::sanitized_env;
 pub use parser::{parse_ahead_behind, parse_porcelain_z, parse_remotes_verbose};

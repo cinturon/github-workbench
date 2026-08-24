@@ -1,15 +1,17 @@
 use workbench_domain::operations::plan::GitCommand;
 
-pub fn command_argv(cmd: &GitCommand) -> Vec<String> {
-    let args = match cmd {
-        GitCommand::Fetch { remote } => vec!["fetch".into(), "--".into(), remote.clone()],
-        GitCommand::CreateBranch { name, start_point } => vec![
+pub fn command_argvs(cmd: &GitCommand) -> Vec<Vec<String>> {
+    let commands = match cmd {
+        GitCommand::Fetch { remote } => {
+            vec![vec!["fetch".into(), "--".into(), remote.clone()]]
+        }
+        GitCommand::CreateBranch { name, start_point } => vec![vec![
             "checkout".into(),
             "-b".into(),
             name.clone(),
             start_point.clone(),
             "--".into(),
-        ],
+        ]],
         GitCommand::PushRef {
             remote,
             local_ref,
@@ -25,17 +27,48 @@ pub fn command_argv(cmd: &GitCommand) -> Vec<String> {
                 remote.clone(),
                 format!("{local_ref}:{remote_ref}"),
             ]);
-            args
+            vec![args]
         }
+        GitCommand::CommitPaths { message, paths } => {
+            let mut add = vec!["add".into(), "--".into()];
+            add.extend(paths.iter().cloned());
+            let mut commit = vec!["commit".into(), "-m".into(), message.clone(), "--".into()];
+            commit.extend(paths.iter().cloned());
+            vec![add, commit]
+        }
+        GitCommand::DeleteRemoteRef { remote, ref_name } => vec![vec![
+            "push".into(),
+            "--".into(),
+            remote.clone(),
+            format!(":refs/heads/{ref_name}"),
+        ]],
     };
-    assert_no_force(&args);
-    args
+
+    for args in &commands {
+        assert_no_force(args);
+    }
+    commands
+}
+
+pub fn command_argv(cmd: &GitCommand) -> Vec<String> {
+    let argvs = command_argvs(cmd);
+    assert!(
+        argvs.len() == 1,
+        "command_argv expects a single git invocation: {cmd:?}"
+    );
+    argvs.into_iter().next().unwrap()
 }
 
 pub fn describe_command(cmd: &GitCommand) -> String {
-    let mut parts = vec!["git".to_string()];
-    parts.extend(command_argv(cmd));
-    parts.join(" ")
+    command_argvs(cmd)
+        .into_iter()
+        .map(|args| {
+            let mut parts = vec!["git".to_string()];
+            parts.extend(args);
+            parts.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn assert_no_force(args: &[String]) {
@@ -55,7 +88,7 @@ pub fn assert_no_force(args: &[String]) {
 mod tests {
     use workbench_domain::operations::plan::GitCommand;
 
-    use crate::argv::command_argv;
+    use crate::argv::{command_argv, command_argvs};
 
     #[test]
     fn push_argv_never_contains_force() {
@@ -102,5 +135,53 @@ mod tests {
             }),
             vec!["fetch", "--", "github"]
         );
+    }
+
+    #[test]
+    fn commit_paths_stages_and_commits_only_named_paths() {
+        let commands = command_argvs(&GitCommand::CommitPaths {
+            message: "chore: add remote action test".into(),
+            paths: vec![".github/workflows/github-workbench-test-01JABC.yml".into()],
+        });
+
+        assert_eq!(
+            commands,
+            vec![
+                vec![
+                    "add",
+                    "--",
+                    ".github/workflows/github-workbench-test-01JABC.yml",
+                ],
+                vec![
+                    "commit",
+                    "-m",
+                    "chore: add remote action test",
+                    "--",
+                    ".github/workflows/github-workbench-test-01JABC.yml",
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn delete_ref_uses_a_non_force_empty_source_refspec() {
+        let commands = command_argvs(&GitCommand::DeleteRemoteRef {
+            remote: "github".into(),
+            ref_name: "github-workbench/test/01JABC".into(),
+        });
+
+        assert_eq!(
+            commands,
+            vec![vec![
+                "push",
+                "--",
+                "github",
+                ":refs/heads/github-workbench/test/01JABC",
+            ]]
+        );
+        assert!(!commands
+            .iter()
+            .flatten()
+            .any(|argument| argument.contains("force")));
     }
 }

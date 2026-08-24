@@ -6,7 +6,7 @@ use workbench_application::AppError;
 use workbench_domain::operations::plan::GitCommand;
 use workbench_domain::repository::{BranchState, Remote, RepositorySnapshot};
 
-use crate::argv::command_argv;
+use crate::argv::{command_argv, command_argvs};
 use crate::env::sanitized_env;
 use crate::parser::{parse_ahead_behind, parse_porcelain_z, parse_remotes_verbose};
 
@@ -255,6 +255,55 @@ impl<R: ProcessRunner> GitClient for ProcessGitClient<R> {
             set_upstream,
         };
         self.run_checked(repo_root, command_argv(&command))
+    }
+
+    fn commit_paths(
+        &self,
+        repo_root: &Path,
+        message: &str,
+        paths: &[String],
+    ) -> Result<CommandOutput, AppError> {
+        if paths.is_empty() {
+            return Err(AppError::Usage {
+                message: "commit_paths requires at least one path".into(),
+            });
+        }
+
+        let command = GitCommand::CommitPaths {
+            message: message.to_string(),
+            paths: paths.to_vec(),
+        };
+        let mut combined = CommandOutput {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        };
+        for args in command_argvs(&command) {
+            let output = self.run_checked(repo_root, args)?;
+            combined.stdout.push_str(&output.stdout);
+            combined.stderr.push_str(&output.stderr);
+        }
+        Ok(combined)
+    }
+
+    fn delete_remote_ref(
+        &self,
+        repo_root: &Path,
+        remote: &str,
+        ref_name: &str,
+    ) -> Result<CommandOutput, AppError> {
+        let command = GitCommand::DeleteRemoteRef {
+            remote: remote.to_string(),
+            ref_name: ref_name.to_string(),
+        };
+        self.run_checked(
+            repo_root,
+            command_argvs(&command).into_iter().next().unwrap(),
+        )
+    }
+
+    fn rev_parse(&self, repo_root: &Path, reference: &str) -> Result<Option<String>, AppError> {
+        self.resolve_oid(repo_root, reference)
     }
 }
 
