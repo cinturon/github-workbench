@@ -1,5 +1,7 @@
 # Phase 2 Local Repository Vertical Slice Implementation Plan
 
+**Status:** Implemented. The checkboxes below are the original TDD sequence; the `gww` CLI vertical slice is on this branch.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a CLI-first `gww` vertical slice that opens a real local Git repository, creates a policy-compliant feature branch from a manually entered issue number and title, previews and executes a push to a configured remote, and journals every multi-step operation in SQLite.
