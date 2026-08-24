@@ -10,5 +10,5 @@ pub use load::parse_policy_yaml;
 pub use preset::github_flow_defaults;
 pub use schema::{
     BranchTypeConfig, BranchesConfig, CommitsConfig, Enforcement, PolicyConfig, PullRequestsConfig,
-    StrategyConfig,
+    RemoteTestingConfig, RetentionHours, StrategyConfig,
 };
