@@ -7,7 +7,7 @@ use workbench_storage::SqliteStore;
 fn migrations_and_operation_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("workbench.db");
-    let store = SqliteStore::open(&db).unwrap();
+    SqliteStore::open(&db).unwrap();
     // open again to prove migrations are idempotent
     let store = SqliteStore::open(&db).unwrap();
 
