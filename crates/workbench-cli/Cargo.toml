@@ -12,3 +12,11 @@ path = "src/main.rs"
 [dependencies]
 workbench-domain = { workspace = true }
 workbench-application = { workspace = true }
+workbench-git = { workspace = true }
+workbench-storage = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

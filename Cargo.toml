@@ -31,3 +31,5 @@ insta = { version = "1", features = ["yaml"] }
 pretty_assertions = "1"
 workbench-domain = { path = "crates/workbench-domain" }
 workbench-application = { path = "crates/workbench-application" }
+workbench-git = { path = "crates/workbench-git" }
+workbench-storage = { path = "crates/workbench-storage" }
