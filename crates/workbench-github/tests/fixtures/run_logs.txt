@@ -1,0 +1,4 @@
+Set up job
+Run action under test
+Upload completed
+Upload result manifest

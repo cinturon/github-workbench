@@ -948,6 +948,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "serde",
+ "serde_json",
  "serde_yaml",
  "thiserror",
  "ulid",
@@ -967,6 +968,13 @@ dependencies = [
 [[package]]
 name = "workbench-github"
 version = "0.1.0"
+dependencies = [
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "workbench-application",
+]
 
 [[package]]
 name = "workbench-storage"

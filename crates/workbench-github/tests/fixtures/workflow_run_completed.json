@@ -1,0 +1,8 @@
+{
+  "id": 42,
+  "head_sha": "abc123",
+  "path": ".github/workflows/github-workbench-test-01JABC.yml",
+  "status": "completed",
+  "conclusion": "success",
+  "html_url": "https://github.com/acme/widgets/actions/runs/42"
+}

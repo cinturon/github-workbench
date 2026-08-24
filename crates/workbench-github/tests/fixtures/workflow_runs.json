@@ -1,0 +1,20 @@
+{
+  "workflow_runs": [
+    {
+      "id": 42,
+      "head_sha": "abc123",
+      "path": ".github/workflows/github-workbench-test-01JABC.yml",
+      "status": "queued",
+      "conclusion": null,
+      "html_url": "https://github.com/acme/widgets/actions/runs/42"
+    },
+    {
+      "id": 41,
+      "head_sha": "different",
+      "path": ".github/workflows/other.yml",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/acme/widgets/actions/runs/41"
+    }
+  ]
+}
