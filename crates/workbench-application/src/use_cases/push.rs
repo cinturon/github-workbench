@@ -68,8 +68,7 @@ where
     C: Clock,
     I: IdGenerator,
 {
-    let (plan, snapshot) =
-        plan_push_changes(git, store, policy_source, path, remote_flag)?;
+    let (plan, snapshot) = plan_push_changes(git, store, policy_source, path, remote_flag)?;
     if plan.commands.is_empty() {
         return Ok(ExecuteOutcome {
             operation_id: String::new(),
