@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 use workbench_application::fakes::{FakeClock, FakeGit, FakeIds, FakePolicy, FakeStore};
-use workbench_application::ports::OperationStore;
 use workbench_application::use_cases::open::open_repository;
 use workbench_application::use_cases::status::repository_status;
 use workbench_application::AppError;
