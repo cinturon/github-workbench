@@ -110,6 +110,12 @@ fn real_git_cli_happy_path_meets_phase_two_exit_criteria() {
         "typo-field: true\n",
     )
     .expect("write invalid policy");
+    let git_refs_before_invalid_policy = git_stdout(
+        &harness.home,
+        &harness.gitconfig,
+        &harness.work,
+        &["show-ref"],
+    );
     let invalid = harness.gww(&["open", path(&harness.work)]);
     assert_exit(&invalid, 2, "gww open with invalid policy");
     assert_eq!(
@@ -120,6 +126,16 @@ fn real_git_cli_happy_path_meets_phase_two_exit_criteria() {
             &["branch", "--show-current"],
         ),
         "main"
+    );
+    assert_eq!(
+        git_stdout(
+            &harness.home,
+            &harness.gitconfig,
+            &harness.work,
+            &["show-ref"],
+        ),
+        git_refs_before_invalid_policy,
+        "invalid policy must not mutate Git refs"
     );
     assert_eq!(
         fs::read(harness.data_dir.join("workbench.db")).expect("reread project database"),
