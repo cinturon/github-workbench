@@ -1,5 +1,27 @@
 use super::{Enforcement, PolicyConfig, PolicyFinding, Severity};
 
+pub fn evaluate_current_branch_policy(policy: &PolicyConfig, branch: &str) -> Vec<PolicyFinding> {
+    if branch == policy.strategy.default_branch {
+        return Vec::new();
+    }
+    let allowed = &policy.branches.allowed_prefixes;
+    let matches_prefix = allowed
+        .iter()
+        .any(|prefix| branch == prefix.as_str() || branch.starts_with(&format!("{prefix}/")));
+    if matches_prefix {
+        return Vec::new();
+    }
+    vec![PolicyFinding {
+        rule_id: "branches.allowed-prefixes".into(),
+        severity: Severity::Warning,
+        expected: allowed.join(", "),
+        actual: branch.into(),
+        message: "Current branch does not use an allowed prefix.".into(),
+        remediation: "Rename the branch to match repository policy, or start a new issue branch."
+            .into(),
+    }]
+}
+
 pub fn evaluate_commit_message_policy(policy: &PolicyConfig, message: &str) -> Vec<PolicyFinding> {
     let severity = match policy.commits.conventional_commits {
         Enforcement::Off => return Vec::new(),

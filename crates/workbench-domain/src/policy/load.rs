@@ -47,6 +47,55 @@ pub fn parse_policy_yaml(yaml: &str) -> Result<PolicyConfig, WorkbenchError> {
         ));
     }
 
+    let remote = &config.remote_testing;
+    if remote.isolation != "ephemeral-branch" {
+        return Err(invalid_policy(
+            "policy.remote-testing.isolation",
+            "ephemeral-branch",
+            remote.isolation.clone(),
+            "Phase 3 supports only ephemeral-branch isolation.",
+            "Set remote-testing.isolation to ephemeral-branch.",
+        ));
+    }
+    if remote.max_matrix_jobs == 0 {
+        return Err(invalid_policy(
+            "policy.remote-testing.max-matrix-jobs",
+            "a positive integer",
+            "0",
+            "Remote test matrix limit must be positive.",
+            "Set remote-testing.max-matrix-jobs to at least 1.",
+        ));
+    }
+    if remote.default_timeout_minutes == 0 {
+        return Err(invalid_policy(
+            "policy.remote-testing.default-timeout-minutes",
+            "a positive integer",
+            "0",
+            "Remote test timeout must be positive.",
+            "Set remote-testing.default-timeout-minutes to at least 1.",
+        ));
+    }
+
+    let unsafe_prefix = remote.branch_prefix.is_empty()
+        || remote.branch_prefix.starts_with('/')
+        || remote.branch_prefix.ends_with('/')
+        || remote.branch_prefix.contains("..")
+        || remote.branch_prefix.contains('\\')
+        || remote
+            .branch_prefix
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace());
+
+    if unsafe_prefix {
+        return Err(invalid_policy(
+            "policy.remote-testing.branch-prefix",
+            "a safe relative Git ref prefix",
+            remote.branch_prefix.clone(),
+            "Remote test branch prefix is unsafe.",
+            "Use a prefix such as github-workbench/test.",
+        ));
+    }
+
     Ok(config)
 }
 

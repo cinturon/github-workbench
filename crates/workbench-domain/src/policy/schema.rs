@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -11,6 +11,8 @@ pub struct PolicyConfig {
     pub commits: CommitsConfig,
     #[serde(default)]
     pub pull_requests: PullRequestsConfig,
+    #[serde(default)]
+    pub remote_testing: RemoteTestingConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,4 +138,85 @@ fn default_main() -> String {
 
 fn default_merge_method() -> String {
     "squash".into()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetentionHours(pub u64);
+
+impl Serialize for RetentionHours {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&format!("{}h", self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for RetentionHours {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        let hours = value
+            .strip_suffix('h')
+            .ok_or_else(|| de::Error::custom("retention must end in h"))?
+            .parse::<u64>()
+            .map_err(de::Error::custom)?;
+        Ok(Self(hours))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct RemoteTestingConfig {
+    #[serde(default = "default_remote_isolation")]
+    pub isolation: String,
+    #[serde(default = "default_remote_branch_prefix")]
+    pub branch_prefix: String,
+    #[serde(default = "default_max_matrix_jobs")]
+    pub max_matrix_jobs: u16,
+    #[serde(default = "default_remote_timeout")]
+    pub default_timeout_minutes: u16,
+    #[serde(default = "default_successful_retention")]
+    pub successful_ref_retention: RetentionHours,
+    #[serde(default = "default_failed_retention")]
+    pub failed_ref_retention: RetentionHours,
+}
+
+impl Default for RemoteTestingConfig {
+    fn default() -> Self {
+        Self {
+            isolation: default_remote_isolation(),
+            branch_prefix: default_remote_branch_prefix(),
+            max_matrix_jobs: default_max_matrix_jobs(),
+            default_timeout_minutes: default_remote_timeout(),
+            successful_ref_retention: default_successful_retention(),
+            failed_ref_retention: default_failed_retention(),
+        }
+    }
+}
+
+fn default_remote_isolation() -> String {
+    "ephemeral-branch".into()
+}
+
+fn default_remote_branch_prefix() -> String {
+    "github-workbench/test".into()
+}
+
+fn default_max_matrix_jobs() -> u16 {
+    6
+}
+
+fn default_remote_timeout() -> u16 {
+    15
+}
+
+fn default_successful_retention() -> RetentionHours {
+    RetentionHours(0)
+}
+
+fn default_failed_retention() -> RetentionHours {
+    RetentionHours(72)
 }

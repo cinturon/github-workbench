@@ -7,6 +7,7 @@ members = [
     "crates/workbench-github",
     "crates/workbench-storage",
     "crates/workbench-cli",
+    "crates/workbench-desktop/src-tauri",
 ]
 
 [workspace.package]
@@ -18,11 +19,19 @@ rust-version = "1.78"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 serde_yaml = "0.9"
 thiserror = "2"
 ulid = { version = "1", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+tempfile = "3"
+time = { version = "0.3", features = ["formatting", "parsing", "std"] }
 proptest = "1"
 insta = { version = "1", features = ["yaml"] }
 pretty_assertions = "1"
 workbench-domain = { path = "crates/workbench-domain" }
 workbench-application = { path = "crates/workbench-application" }
+workbench-git = { path = "crates/workbench-git" }
+workbench-github = { path = "crates/workbench-github" }
+workbench-storage = { path = "crates/workbench-storage" }

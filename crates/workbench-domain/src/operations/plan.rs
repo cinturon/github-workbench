@@ -37,6 +37,26 @@ pub enum GitCommand {
         remote_ref: String,
         set_upstream: bool,
     },
+    CommitPaths {
+        message: String,
+        paths: Vec<String>,
+    },
+    DeleteRemoteRef {
+        remote: String,
+        ref_name: String,
+    },
+}
+
+impl GitCommand {
+    pub fn step_kind(&self) -> &'static str {
+        match self {
+            GitCommand::Fetch { .. } => "fetch",
+            GitCommand::CreateBranch { .. } => "create-branch",
+            GitCommand::PushRef { .. } => "push-ref",
+            GitCommand::CommitPaths { .. } => "commit-paths",
+            GitCommand::DeleteRemoteRef { .. } => "delete-remote-ref",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
