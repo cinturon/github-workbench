@@ -20,7 +20,7 @@ rust-version = "1.78"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "2"
-ulid = "1"
+ulid = { version = "1", features = ["serde"] }
 proptest = "1"
 insta = { version = "1", features = ["yaml"] }
 pretty_assertions = "1"
