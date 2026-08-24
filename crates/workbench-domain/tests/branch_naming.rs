@@ -25,3 +25,8 @@ fn rejects_double_dot_in_slug_source_after_normalize_path() {
     let slug = normalize_slug("foo..bar").unwrap();
     assert!(!slug.contains(".."));
 }
+
+#[test]
+fn rejects_git_forbidden_chars_in_pattern() {
+    assert!(branch_name("feature/{issue}:{slug}", 1, "x").is_err());
+}

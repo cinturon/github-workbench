@@ -37,18 +37,21 @@ pub fn branch_name(pattern: &str, issue: u64, title: &str) -> Result<String, Wor
     Ok(name)
 }
 
+fn is_forbidden_ref_char(c: char) -> bool {
+    // Git disallows ASCII control chars (incl. NUL, DEL) and these punctuation chars in refs.
+    c.is_ascii_control()
+        || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\')
+}
+
 fn validate_branch_ref(name: &str) -> Result<(), WorkbenchError> {
     if name.is_empty()
-        || name.contains(' ')
         || name.contains("//")
         || name.contains("..")
         || name.starts_with('/')
         || name.ends_with('/')
         || name.ends_with(".lock")
         || name.contains("@{")
-        || name.contains('\\')
-        || name.contains('\0')
-        || name.chars().any(|c| c.is_ascii_control())
+        || name.chars().any(is_forbidden_ref_char)
     {
         return Err(WorkbenchError::InvalidBranchName {
             reason: format!("prohibited ref characters in `{name}`"),
