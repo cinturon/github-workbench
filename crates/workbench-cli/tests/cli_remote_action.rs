@@ -83,6 +83,15 @@ sha="$(git rev-parse HEAD)"
 workflow="$(basename "$(find .github/workflows -name 'github-workbench-test-*.yml' -print -quit)")"
 if [ "$command_name" = "api" ]; then
   case "$*" in
+    *"/git/ref/heads/"*)
+      ref="${4#*git/ref/}"
+      ref_sha="$(git --git-dir="$HOME/../remote.git" rev-parse "$ref")"
+      printf '{"object":{"sha":"%s"}}\n' "$ref_sha"
+      ;;
+    *"/git/refs/heads/"*)
+      ref="${4#*git/refs/}"
+      git --git-dir="$HOME/../remote.git" update-ref -d "$ref"
+      ;;
     *"/actions/runs/42"*)
       printf '{"id":42,"head_sha":"%s","path":".github/workflows/%s","status":"completed","conclusion":"success","html_url":"https://github.com/acme/widgets/actions/runs/42"}\n' "$sha" "$workflow"
       ;;
