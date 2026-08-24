@@ -219,6 +219,7 @@ pub fn execute_remote_test<G, H, S, C, I, L>(
     sleeper: &L,
     plan: &RemoteTestSessionPlan,
     evidence_root: &Path,
+    wait: bool,
 ) -> Result<RemoteTestResult, AppError>
 where
     G: GitClient,
@@ -308,7 +309,7 @@ where
         &plan.repo_root,
         &plan.session_id,
         evidence_root,
-        true,
+        wait,
     )
 }
 

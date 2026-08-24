@@ -20,6 +20,7 @@ fn execution_authenticates_pushes_downloads_and_persists_result() {
         &harness.sleeper,
         &plan,
         harness.evidence.path(),
+        true,
     )
     .unwrap();
 
@@ -59,6 +60,40 @@ fn execution_authenticates_pushes_downloads_and_persists_result() {
 }
 
 #[test]
+fn non_waiting_execution_pushes_exact_reviewed_plan_and_returns_pending() {
+    let harness = RemoteTestHarness::new();
+    let plan = harness.plan();
+
+    let error = execute_remote_test(
+        &harness.git,
+        &harness.github,
+        &harness.store,
+        &harness.clock,
+        &harness.ids,
+        &harness.sleeper,
+        &plan,
+        harness.evidence.path(),
+        false,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        workbench_application::AppError::RemotePending { ref session_id }
+            if session_id == &plan.session_id
+    ));
+    let stored = harness
+        .store
+        .get_test_session(&plan.project_id, &plan.session_id)
+        .unwrap()
+        .unwrap();
+    let state: StoredSessionState = serde_json::from_str(&stored.result_json).unwrap();
+    assert_eq!(stored.status, TestSessionStatus::Pushed);
+    assert_eq!(state.plan, plan);
+    assert!(state.result.is_none());
+}
+
+#[test]
 fn head_change_is_rejected_before_workflow_or_git_mutation() {
     let harness = RemoteTestHarness::completed_success();
     let plan = harness.plan();
@@ -73,6 +108,7 @@ fn head_change_is_rejected_before_workflow_or_git_mutation() {
         &harness.sleeper,
         &plan,
         harness.evidence.path(),
+        true,
     )
     .unwrap_err();
 

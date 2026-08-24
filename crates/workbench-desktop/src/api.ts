@@ -56,13 +56,15 @@ export const listActionTests = (repoRoot: string) =>
 
 export const startActionTest = (
   repoRoot: string,
-  testName: string,
+  testName: string | null,
   confirmed: boolean,
+  plan: SessionPlan | null,
 ) =>
   invoke<StartResponse>("start_action_test", {
     repoRoot,
     testName,
     confirmed,
+    plan,
   });
 
 export const watchActionTest = (repoRoot: string, sessionId: string) =>

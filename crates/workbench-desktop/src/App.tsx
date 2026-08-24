@@ -80,6 +80,7 @@ export default function App() {
         normalizedRoot,
         selectedTest,
         false,
+        null,
       );
       setPlan(response.plan);
       setStatus("planned");
@@ -99,8 +100,9 @@ export default function App() {
     try {
       const response = await startActionTest(
         normalizedRoot,
-        selectedTest,
+        null,
         true,
+        plan,
       );
       setPlan(response.plan);
       if (response.result) {

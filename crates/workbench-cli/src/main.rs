@@ -202,6 +202,7 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
                     &sleeper,
                     &plan,
                     &data_dir.join("evidence"),
+                    true,
                 )?;
                 println!("{}", render_remote_test_result(&result));
             }

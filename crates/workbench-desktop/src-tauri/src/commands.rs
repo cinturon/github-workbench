@@ -6,6 +6,7 @@ use workbench_application::action_tests::{RemoteTestResult, RemoteTestSessionPla
 use workbench_application::clock::{SystemClock, ThreadSleeper};
 use workbench_application::ids::UlidGenerator;
 use workbench_application::policy_source::FilePolicySource;
+use workbench_application::ports::GitClient;
 use workbench_application::use_cases::action_discovery::{
     discover_action_tests, ActionTestCatalog,
 };
@@ -45,12 +46,19 @@ pub async fn list_action_tests(repo_root: String) -> Result<ActionTestCatalog, S
 pub async fn start_action_test(
     state: State<'_, DesktopState>,
     repo_root: String,
-    test_name: String,
+    test_name: Option<String>,
     confirmed: bool,
+    plan: Option<RemoteTestSessionPlan>,
 ) -> Result<StartActionTestResponse, String> {
     let data_dir = state.data_dir().to_path_buf();
     run_blocking(move || {
-        start_action_test_from_root(&data_dir, Path::new(&repo_root), &test_name, confirmed)
+        start_action_test_from_root(
+            &data_dir,
+            Path::new(&repo_root),
+            test_name.as_deref(),
+            confirmed,
+            plan,
+        )
     })
     .await
 }
@@ -84,8 +92,9 @@ pub async fn get_action_test_result(
 fn start_action_test_from_root(
     data_dir: &Path,
     repo_root: &Path,
-    test_name: &str,
+    test_name: Option<&str>,
     confirmed: bool,
+    reviewed_plan: Option<RemoteTestSessionPlan>,
 ) -> Result<StartActionTestResponse, AppError> {
     let git = ProcessGitClient::new(StdProcessRunner);
     let store = open_store(data_dir)?;
@@ -93,7 +102,23 @@ fn start_action_test_from_root(
     let clock = SystemClock;
     let ids = UlidGenerator;
     let sleeper = ThreadSleeper;
-    let plan = plan_remote_test(&git, &store, &policy, &ids, repo_root, test_name, None)?;
+    let plan = if confirmed {
+        let plan = reviewed_plan.ok_or_else(|| AppError::Usage {
+            message: "confirmation requires the reviewed remote-test plan".into(),
+        })?;
+        let root = git.resolve_toplevel(repo_root)?;
+        if plan.repo_root != root {
+            return Err(AppError::Usage {
+                message: "the reviewed remote-test plan belongs to a different repository".into(),
+            });
+        }
+        plan
+    } else {
+        let test_name = test_name.ok_or_else(|| AppError::Usage {
+            message: "preview requires an Action Test name".into(),
+        })?;
+        plan_remote_test(&git, &store, &policy, &ids, repo_root, test_name, None)?
+    };
 
     if !confirmed {
         return Ok(StartActionTestResponse { plan, result: None });
@@ -109,18 +134,17 @@ fn start_action_test_from_root(
         &sleeper,
         &plan,
         &evidence_root(data_dir),
+        false,
     ) {
-        Ok(result) => result,
+        Ok(result) => Some(result),
+        Err(AppError::RemotePending { session_id }) if session_id == plan.session_id => None,
         Err(error) if matches!(error, AppError::AssertionFailed { .. }) => {
-            get_session_result(&git, &store, repo_root, &plan.session_id)?.ok_or(error)?
+            Some(get_session_result(&git, &store, repo_root, &plan.session_id)?.ok_or(error)?)
         }
         Err(error) => return Err(error),
     };
 
-    Ok(StartActionTestResponse {
-        plan,
-        result: Some(result),
-    })
+    Ok(StartActionTestResponse { plan, result })
 }
 
 fn watch_action_test_from_root(
