@@ -42,7 +42,7 @@ fn clean_repository_plans_generated_only_ephemeral_push() {
                 set_upstream: false,
                 ..
             }
-        ] if paths == &[plan.workflow_path.clone()]
+        ] if paths == std::slice::from_ref(&plan.workflow_path)
     ));
     assert!(plan.workflow_yaml.contains("ubuntu-latest"));
     assert!(!harness.repo.path().join(&plan.workflow_path).exists());
