@@ -1,0 +1,19 @@
+---
+source: crates/workbench-domain/tests/create_branch_plan.rs
+expression: stable
+---
+id: "00000000000000000000000000"
+kind: create-branch-from-issue
+risk: low
+summary: "Create branch feature/42-add-resumable-uploads from main for issue #42"
+rationale:
+  - "Feature branches follow pattern `feature/{issue}-{slug}`."
+  - "Feature branches require an issue: true."
+  - "Feature branches start from `main`."
+commands:
+  - type: create-branch
+    name: feature/42-add-resumable-uploads
+    start_point: main
+preconditions:
+  - "Branch `main` exists or can be fetched."
+findings: []

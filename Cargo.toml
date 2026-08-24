@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/workbench-domain",
+    "crates/workbench-application",
+    "crates/workbench-git",
+    "crates/workbench-github",
+    "crates/workbench-storage",
+    "crates/workbench-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/cinturon/github-workbench"
+rust-version = "1.78"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "2"
+ulid = { version = "1", features = ["serde"] }
+proptest = "1"
+insta = { version = "1", features = ["yaml"] }
+pretty_assertions = "1"
+workbench-domain = { path = "crates/workbench-domain" }
+workbench-application = { path = "crates/workbench-application" }

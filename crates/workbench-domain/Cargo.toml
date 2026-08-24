@@ -1,0 +1,18 @@
+[package]
+name = "workbench-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Pure domain logic for GitHub Workflow Workbench"
+
+[dependencies]
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+ulid = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+insta = { workspace = true }
+pretty_assertions = { workspace = true }

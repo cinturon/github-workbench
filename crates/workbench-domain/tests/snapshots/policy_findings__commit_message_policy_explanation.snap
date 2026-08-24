@@ -1,0 +1,10 @@
+---
+source: crates/workbench-domain/tests/policy_findings.rs
+expression: findings
+---
+- rule_id: commits.conventional-commits
+  severity: warning
+  expected: "<type>[optional scope][!]: <description>"
+  actual: update parser
+  message: Commit message does not follow Conventional Commits syntax.
+  remediation: "Use a message such as `feat: add policy evaluation`."
