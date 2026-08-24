@@ -1,0 +1,29 @@
+[package]
+name = "workbench-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "workbench_desktop"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "workbench-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+workbench-application = { workspace = true }
+workbench-git = { workspace = true }
+workbench-github = { workspace = true }
+workbench-storage = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
