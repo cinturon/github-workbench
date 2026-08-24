@@ -1,5 +1,6 @@
 pub mod clock;
 pub mod error;
+pub mod executor;
 pub mod fakes;
 pub mod ids;
 pub mod policy_source;
