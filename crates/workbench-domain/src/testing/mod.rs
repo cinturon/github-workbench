@@ -1,3 +1,7 @@
-//! Placeholder for Phase 3 action-test domain types.
+mod action;
+mod error;
 
-#![allow(dead_code)]
+pub use action::{
+    parse_action_definition, ActionDefinition, ActionInput, ActionRuntime,
+};
+pub use error::TestingError;
