@@ -89,7 +89,7 @@ if [ "$command_name" = "api" ]; then
       printf '{"object":{"sha":"%s"}}\n' "$ref_sha"
       ;;
     *"/git/refs/heads/"*)
-      ref="${4#*git/refs/}"
+      ref="refs/${4#*git/refs/}"
       git --git-dir="$HOME/../remote.git" update-ref -d "$ref"
       ;;
     *"/actions/runs/42"*)
