@@ -2,14 +2,13 @@ use std::io::{self, BufRead, IsTerminal, Write};
 
 use workbench_application::AppError;
 
-pub fn confirm(plan: &str, yes: bool) -> Result<bool, AppError> {
+pub fn confirm(yes: bool) -> Result<bool, AppError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
-    confirm_with_io(plan, yes, stdin.is_terminal(), stdin.lock(), stdout.lock())
+    confirm_with_io(yes, stdin.is_terminal(), stdin.lock(), stdout.lock())
 }
 
 fn confirm_with_io<R, W>(
-    plan: &str,
     yes: bool,
     is_terminal: bool,
     mut input: R,
@@ -28,10 +27,6 @@ where
         });
     }
 
-    writeln!(output, "{plan}").map_err(|error| AppError::Io {
-        path: "stdout".into(),
-        detail: error.to_string(),
-    })?;
     write!(output, "Proceed? [y/N] ").map_err(|error| AppError::Io {
         path: "stdout".into(),
         detail: error.to_string(),
@@ -60,8 +55,7 @@ mod tests {
     #[test]
     fn yes_bypasses_terminal_requirement_and_prompt() {
         let mut output = Vec::new();
-        let confirmed =
-            confirm_with_io("Plan text", true, false, Cursor::new(""), &mut output).unwrap();
+        let confirmed = confirm_with_io(true, false, Cursor::new(""), &mut output).unwrap();
 
         assert!(confirmed);
         assert!(output.is_empty());
@@ -69,8 +63,7 @@ mod tests {
 
     #[test]
     fn non_terminal_without_yes_is_invalid_usage() {
-        let error = confirm_with_io("Plan text", false, false, Cursor::new("yes\n"), Vec::new())
-            .unwrap_err();
+        let error = confirm_with_io(false, false, Cursor::new("yes\n"), Vec::new()).unwrap_err();
 
         assert_eq!(
             error,
@@ -81,22 +74,17 @@ mod tests {
     }
 
     #[test]
-    fn terminal_prints_plan_and_accepts_yes_case_insensitively() {
+    fn terminal_prompts_and_accepts_yes_case_insensitively() {
         let mut output = Vec::new();
-        let confirmed =
-            confirm_with_io("Plan text", false, true, Cursor::new("YES\n"), &mut output).unwrap();
+        let confirmed = confirm_with_io(false, true, Cursor::new("YES\n"), &mut output).unwrap();
 
         assert!(confirmed);
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            "Plan text\nProceed? [y/N] "
-        );
+        assert_eq!(String::from_utf8(output).unwrap(), "Proceed? [y/N] ");
     }
 
     #[test]
     fn terminal_defaults_to_decline() {
-        let confirmed =
-            confirm_with_io("Plan text", false, true, Cursor::new("\n"), Vec::new()).unwrap();
+        let confirmed = confirm_with_io(false, true, Cursor::new("\n"), Vec::new()).unwrap();
 
         assert!(!confirmed);
     }

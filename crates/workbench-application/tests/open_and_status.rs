@@ -79,6 +79,33 @@ fn open_records_project_from_sole_remote() {
 }
 
 #[test]
+fn open_records_local_project_without_remotes() {
+    let git = git(
+        snap("main", vec![], vec![], false),
+        branch("main", 0, vec![]),
+    );
+    let store = FakeStore::new();
+
+    let out = open_repository(
+        &git,
+        &store,
+        &FakePolicy { yaml: None },
+        &FakeClock("2026-08-24T00:00:00Z".into()),
+        &FakeIds::new(),
+        PathBuf::from("/tmp/repo").as_path(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(out.snapshot.selected_remote, None);
+    assert_eq!(out.project.remote_name, None);
+    assert_eq!(out.project.github_host, None);
+    assert_eq!(out.project.owner, None);
+    assert_eq!(out.project.repo, None);
+    assert_eq!(store.projects.lock().unwrap().len(), 1);
+}
+
+#[test]
 fn invalid_policy_does_not_write_sqlite() {
     let git = git(
         snap("main", vec![], vec![github_remote()], false),

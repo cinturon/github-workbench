@@ -56,7 +56,7 @@ fn fake_git(snapshot: RepositorySnapshot, branch: BranchState) -> FakeGit {
 }
 
 #[test]
-fn dirty_tree_blocks_plan_and_execute_without_git_or_store_mutation() {
+fn dirty_tree_blocks_planning_without_git_or_store_mutation() {
     let mut dirty = snapshot("feature/push", vec![remote("github", "widgets")]);
     dirty.dirty_paths = vec!["a.txt".into()];
     let git = fake_git(dirty, branch("feature/push", 1));
@@ -70,24 +70,12 @@ fn dirty_tree_blocks_plan_and_execute_without_git_or_store_mutation() {
         None,
     )
     .unwrap_err();
-    let execute_error = execute_push(
-        &git,
-        &store,
-        &FakePolicy { yaml: None },
-        &FakeClock(NOW.into()),
-        &FakeIds::new(),
-        Path::new(ROOT),
-        None,
-    )
-    .unwrap_err();
-
     assert_eq!(
         plan_error,
         AppError::DirtyWorkingTree {
             paths: vec!["a.txt".into()]
         }
     );
-    assert_eq!(execute_error, plan_error);
     assert!(git.executed.borrow().is_empty());
     assert!(store.projects.lock().unwrap().is_empty());
     assert!(store.operations.lock().unwrap().is_empty());
@@ -131,14 +119,14 @@ fn clean_feature_branch_plans_fetch_and_non_force_push_with_upstream() {
 }
 
 #[test]
-fn branch_with_no_ahead_commits_is_noop_without_store_mutation() {
+fn branch_with_no_ahead_commits_is_noop_without_journal_row() {
     let git = fake_git(
         snapshot("feature/push", vec![remote("github", "widgets")]),
         branch("feature/push", 0),
     );
     let store = FakeStore::new();
 
-    let (plan, _) = plan_push_changes(
+    let (plan, planned_snapshot) = plan_push_changes(
         &git,
         &store,
         &FakePolicy { yaml: None },
@@ -149,11 +137,10 @@ fn branch_with_no_ahead_commits_is_noop_without_store_mutation() {
     let outcome = execute_push(
         &git,
         &store,
-        &FakePolicy { yaml: None },
         &FakeClock(NOW.into()),
         &FakeIds::new(),
-        Path::new(ROOT),
-        None,
+        &plan,
+        &planned_snapshot,
     )
     .unwrap();
 
@@ -163,7 +150,7 @@ fn branch_with_no_ahead_commits_is_noop_without_store_mutation() {
     assert_eq!(outcome.status, "noop");
     assert!(outcome.changed.is_empty());
     assert!(git.executed.borrow().is_empty());
-    assert!(store.projects.lock().unwrap().is_empty());
+    assert_eq!(store.projects.lock().unwrap().len(), 1);
     assert!(store.operations.lock().unwrap().is_empty());
 }
 
@@ -234,15 +221,22 @@ fn successful_push_is_returned_by_project_operations_with_succeeded_steps() {
         branch("feature/push", 2),
     );
     let store = FakeStore::new();
+    let (confirmed_plan, planned_snapshot) = plan_push_changes(
+        &git,
+        &store,
+        &FakePolicy { yaml: None },
+        Path::new(ROOT),
+        None,
+    )
+    .unwrap();
 
     let outcome = execute_push(
         &git,
         &store,
-        &FakePolicy { yaml: None },
         &FakeClock(NOW.into()),
         &FakeIds::new(),
-        Path::new(ROOT),
-        None,
+        &confirmed_plan,
+        &planned_snapshot,
     )
     .unwrap();
     let operations = list_project_operations(&git, &store, Path::new(ROOT), None).unwrap();
@@ -251,6 +245,10 @@ fn successful_push_is_returned_by_project_operations_with_succeeded_steps() {
     assert_eq!(operations.len(), 1);
     assert_eq!(operations[0].kind, "push");
     assert_eq!(operations[0].status, "succeeded");
+    assert_eq!(
+        operations[0].plan_json,
+        serde_json::to_string(&confirmed_plan).unwrap()
+    );
     assert_eq!(operations[0].steps.len(), 2);
     assert!(operations[0]
         .steps
@@ -279,12 +277,10 @@ fn detached_head_is_rejected_before_remote_resolution_or_mutation() {
     let git = fake_git(detached, branch("feature/push", 1));
     let store = FakeStore::new();
 
-    let error = execute_push(
+    let error = plan_push_changes(
         &git,
         &store,
         &FakePolicy { yaml: None },
-        &FakeClock(NOW.into()),
-        &FakeIds::new(),
         Path::new(ROOT),
         None,
     )
@@ -309,16 +305,23 @@ fn listing_operations_defaults_to_twenty_rows() {
     );
     let store = FakeStore::new();
     let ids = FakeIds::new();
+    let (confirmed_plan, planned_snapshot) = plan_push_changes(
+        &git,
+        &store,
+        &FakePolicy { yaml: None },
+        Path::new(ROOT),
+        None,
+    )
+    .unwrap();
 
     for _ in 0..21 {
         execute_push(
             &git,
             &store,
-            &FakePolicy { yaml: None },
             &FakeClock(NOW.into()),
             &ids,
-            Path::new(ROOT),
-            None,
+            &confirmed_plan,
+            &planned_snapshot,
         )
         .unwrap();
     }

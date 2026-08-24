@@ -37,13 +37,17 @@ where
     let root = git.resolve_toplevel(path)?;
     let mut snapshot = git.snapshot(&root)?;
     let (policy, policy_source) = load_policy(policy, &root)?;
-    let remote_name = resolve_remote(&snapshot.remotes, None, remote_flag)?;
-    snapshot.selected_remote = Some(remote_name.clone());
+    let remote_name = if snapshot.remotes.is_empty() && remote_flag.is_none() {
+        None
+    } else {
+        Some(resolve_remote(&snapshot.remotes, None, remote_flag)?)
+    };
+    snapshot.selected_remote = remote_name.clone();
 
     let identity = snapshot
         .remotes
         .iter()
-        .find(|remote| remote.name == remote_name)
+        .find(|remote| Some(remote.name.as_str()) == remote_name.as_deref())
         .and_then(|remote| parse_github_remote(&remote.url));
     let id = ids.next().to_string();
     let local_path = root.to_string_lossy().into_owned();
@@ -54,7 +58,7 @@ where
         github_host: identity.as_ref().map(|value| value.host.as_str()),
         owner: identity.as_ref().map(|value| value.owner.as_str()),
         repo: identity.as_ref().map(|value| value.name.as_str()),
-        remote_name: Some(&remote_name),
+        remote_name: remote_name.as_deref(),
         now: &now,
     })?;
 

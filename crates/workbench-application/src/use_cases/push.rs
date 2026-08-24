@@ -52,31 +52,20 @@ where
     Ok((plan, snapshot))
 }
 
-pub fn execute_push<G, S, P, C, I>(
+pub fn execute_push<G, S, C, I>(
     git: &G,
     store: &S,
-    policy_source: &P,
     clock: &C,
     ids: &I,
-    path: &Path,
-    remote_flag: Option<&str>,
+    plan: &OperationPlan,
+    snapshot: &RepositorySnapshot,
 ) -> Result<ExecuteOutcome, AppError>
 where
     G: GitClient,
     S: OperationStore,
-    P: PolicySource,
     C: Clock,
     I: IdGenerator,
 {
-    let (plan, snapshot) = plan_push_changes(git, store, policy_source, path, remote_flag)?;
-    if plan.commands.is_empty() {
-        return Ok(ExecuteOutcome {
-            operation_id: String::new(),
-            status: "noop".into(),
-            changed: vec![],
-        });
-    }
-
     let remote_name = snapshot
         .selected_remote
         .as_deref()
@@ -98,5 +87,5 @@ where
         now: &now,
     })?;
 
-    execute_plan(git, store, clock, ids, &project.id, &snapshot, &plan)
+    execute_plan(git, store, clock, ids, &project.id, snapshot, plan)
 }

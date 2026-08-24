@@ -8,6 +8,17 @@ pub struct StdProcessRunner;
 
 impl ProcessRunner for StdProcessRunner {
     fn run(&self, spec: &CommandSpec) -> Result<CommandOutput, AppError> {
+        let cwd_metadata = std::fs::metadata(&spec.cwd).map_err(|err| AppError::Io {
+            path: spec.cwd.display().to_string(),
+            detail: err.to_string(),
+        })?;
+        if !cwd_metadata.is_dir() {
+            return Err(AppError::Io {
+                path: spec.cwd.display().to_string(),
+                detail: "working directory is not a directory".into(),
+            });
+        }
+
         let output = Command::new(&spec.program)
             .args(&spec.args)
             .current_dir(&spec.cwd)
@@ -17,7 +28,7 @@ impl ProcessRunner for StdProcessRunner {
             .stderr(Stdio::piped())
             .output()
             .map_err(|err| {
-                if err.kind() == ErrorKind::NotFound {
+                if err.kind() == ErrorKind::NotFound && spec.cwd.is_dir() {
                     AppError::GitUnavailable {
                         detail: err.to_string(),
                     }
@@ -87,5 +98,24 @@ mod tests {
         let runner = StdProcessRunner;
         let err = runner.run(&spec).expect_err("expected GitUnavailable");
         assert!(matches!(err, AppError::GitUnavailable { .. }));
+    }
+
+    #[test]
+    fn missing_working_directory_returns_io_error() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let missing = temp.path().join("does-not-exist");
+        let spec = CommandSpec {
+            program: "git".into(),
+            args: vec!["--version".into()],
+            cwd: missing.clone(),
+            env: sanitized_env(&[]),
+        };
+
+        let runner = StdProcessRunner;
+        let err = runner.run(&spec).expect_err("expected missing cwd error");
+        assert!(matches!(
+            err,
+            AppError::Io { ref path, .. } if path == &missing.display().to_string()
+        ));
     }
 }

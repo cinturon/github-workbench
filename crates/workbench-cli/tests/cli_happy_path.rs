@@ -153,6 +153,12 @@ fn real_git_cli_happy_path_meets_phase_two_exit_criteria() {
         "--yes",
     ]);
     assert_exit(&started, 0, "gww issue start");
+    assert!(
+        stdout(&started).contains("Commands:")
+            && stdout(&started).contains(&format!("checkout -b {FEATURE_BRANCH} main")),
+        "--yes issue start did not print its plan:\n{}",
+        combined(&started)
+    );
     assert_eq!(
         git_stdout(
             &harness.home,
@@ -207,6 +213,12 @@ fn real_git_cli_happy_path_meets_phase_two_exit_criteria() {
     let pushed = harness.gww(&["push", "--yes"]);
     assert_exit(&pushed, 0, "gww push --yes");
     assert!(
+        stdout(&pushed).contains("Commands:")
+            && stdout(&pushed).contains(&format!("{FEATURE_BRANCH}:{FEATURE_BRANCH}")),
+        "--yes push did not print its plan:\n{}",
+        combined(&pushed)
+    );
+    assert!(
         remote_feature_ref(&harness).contains(&format!("refs/heads/{FEATURE_BRANCH}")),
         "remote feature branch was not published"
     );
@@ -245,6 +257,21 @@ fn real_git_cli_happy_path_meets_phase_two_exit_criteria() {
         stdout(&empty_plan).contains("Nothing to push"),
         "empty push plan was not explained:\n{}",
         combined(&empty_plan)
+    );
+}
+
+#[test]
+fn open_missing_path_reports_io_error_instead_of_missing_git() {
+    let harness = Harness::new();
+    let missing = harness.work.join("does-not-exist");
+
+    let output = harness.gww(&["open", path(&missing)]);
+
+    assert_exit(&output, 2, "gww open missing path");
+    assert!(
+        !combined(&output).contains("git is not available"),
+        "missing path was misreported as a missing git executable:\n{}",
+        combined(&output)
     );
 }
 

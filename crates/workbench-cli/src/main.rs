@@ -108,7 +108,7 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
                 remote,
             } => {
                 let cwd = current_dir()?;
-                let (plan, _, _) = plan_start_issue(
+                let (plan, snapshot, _) = plan_start_issue(
                     &git,
                     &store,
                     &policy,
@@ -118,24 +118,15 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
                     remote.as_deref(),
                 )?;
                 let plan_text = render_plan(&plan);
-                if !confirm(&plan_text, yes)? {
+                println!("{plan_text}");
+                if !confirm(yes)? {
                     return Ok(RunOutcome::Aborted);
                 }
                 let branch_name = plan.commands.iter().find_map(|command| match command {
                     GitCommand::CreateBranch { name, .. } => Some(name.clone()),
                     _ => None,
                 });
-                let outcome = execute_start_issue(
-                    &git,
-                    &store,
-                    &policy,
-                    &clock,
-                    &ids,
-                    &cwd,
-                    number,
-                    &title,
-                    remote.as_deref(),
-                )?;
+                let outcome = execute_start_issue(&git, &store, &clock, &ids, &plan, &snapshot)?;
                 println!("Operation id: {}", outcome.operation_id);
                 if let Some(branch_name) = branch_name {
                     println!("Created branch: {branch_name}");
@@ -144,18 +135,17 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
         },
         Commands::Push { plan, yes, remote } => {
             let cwd = current_dir()?;
-            let (operation_plan, _) =
+            let (operation_plan, snapshot) =
                 plan_push_changes(&git, &store, &policy, &cwd, remote.as_deref())?;
             let plan_text = render_plan(&operation_plan);
+            println!("{plan_text}");
             if plan {
-                println!("{plan_text}");
                 return Ok(RunOutcome::Success);
             }
-            if !confirm(&plan_text, yes)? {
+            if !confirm(yes)? {
                 return Ok(RunOutcome::Aborted);
             }
-            let outcome =
-                execute_push(&git, &store, &policy, &clock, &ids, &cwd, remote.as_deref())?;
+            let outcome = execute_push(&git, &store, &clock, &ids, &operation_plan, &snapshot)?;
             if outcome.status == "noop" {
                 println!("Nothing to push.");
             } else {

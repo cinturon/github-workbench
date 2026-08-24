@@ -40,27 +40,20 @@ where
     Ok((plan, snapshot, policy))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn execute_start_issue<G, S, P, C, I>(
+pub fn execute_start_issue<G, S, C, I>(
     git: &G,
     store: &S,
-    policy_source: &P,
     clock: &C,
     ids: &I,
-    path: &Path,
-    issue: u64,
-    title: &str,
-    remote_flag: Option<&str>,
+    plan: &OperationPlan,
+    snapshot: &RepositorySnapshot,
 ) -> Result<ExecuteOutcome, AppError>
 where
     G: GitClient,
     S: OperationStore,
-    P: PolicySource,
     C: Clock,
     I: IdGenerator,
 {
-    let (plan, snapshot, _) =
-        plan_start_issue(git, store, policy_source, path, issue, title, remote_flag)?;
     let remote_name = snapshot
         .selected_remote
         .as_deref()
@@ -82,5 +75,5 @@ where
         now: &now,
     })?;
 
-    execute_plan(git, store, clock, ids, &project.id, &snapshot, &plan)
+    execute_plan(git, store, clock, ids, &project.id, snapshot, plan)
 }

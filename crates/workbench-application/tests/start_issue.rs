@@ -399,14 +399,14 @@ fn empty_plan_is_noop_without_journal_row() {
 }
 
 #[test]
-fn invalid_policy_does_not_write_store() {
+fn invalid_policy_during_planning_does_not_write_store() {
     let git = fake_git(
         snapshot("main", vec![remote("github", "widgets")]),
         branch("main"),
     );
     let store = FakeStore::new();
 
-    let error = execute_start_issue(
+    let error = plan_start_issue(
         &git,
         &store,
         &FakePolicy {
@@ -415,8 +415,6 @@ fn invalid_policy_does_not_write_store() {
                     .into(),
             ),
         },
-        &FakeClock(NOW.into()),
-        &FakeIds::new(),
         Path::new(ROOT),
         42,
         "Add resumable uploads",
@@ -430,32 +428,41 @@ fn invalid_policy_does_not_write_store() {
 }
 
 #[test]
-fn execute_start_issue_upserts_project_then_executes_plan() {
-    let git = fake_git(
-        snapshot("main", vec![remote("github", "widgets")]),
-        branch("main"),
+fn execute_start_issue_uses_and_journals_the_confirmed_plan() {
+    let mut planned_snapshot = snapshot("main", vec![remote("github", "widgets")]);
+    planned_snapshot.selected_remote = Some("github".into());
+    let confirmed_plan = plan(
+        RiskClass::Low,
+        vec![GitCommand::CreateBranch {
+            name: "feature/confirmed-plan".into(),
+            start_point: "confirmed-base".into(),
+        }],
     );
+    let git = fake_git(planned_snapshot.clone(), branch("main"));
     let store = FakeStore::new();
 
     let outcome = execute_start_issue(
         &git,
         &store,
-        &FakePolicy { yaml: None },
         &FakeClock(NOW.into()),
         &FakeIds::new(),
-        Path::new(ROOT),
-        42,
-        "Add resumable uploads",
-        None,
+        &confirmed_plan,
+        &planned_snapshot,
     )
     .unwrap();
 
     assert_eq!(outcome.status, "succeeded");
+    assert_eq!(*git.executed.borrow(), confirmed_plan.commands);
     let project = store.get_project_by_path(Path::new(ROOT)).unwrap().unwrap();
     assert_eq!(project.remote_name.as_deref(), Some("github"));
     assert_eq!(project.owner.as_deref(), Some("acme"));
     assert_eq!(project.repo.as_deref(), Some("widgets"));
-    assert_eq!(store.operations.lock().unwrap()[0].project_id, project.id);
+    let operations = store.operations.lock().unwrap();
+    assert_eq!(operations[0].project_id, project.id);
+    assert_eq!(
+        operations[0].plan_json,
+        serde_json::to_string(&confirmed_plan).unwrap()
+    );
 }
 
 fn command_is_compile_time_allowlisted(command: &GitCommand) -> &'static str {

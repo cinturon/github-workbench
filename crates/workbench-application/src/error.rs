@@ -53,7 +53,9 @@ pub enum AppError {
 impl AppError {
     pub fn exit_code(&self) -> i32 {
         match self {
-            AppError::Domain(WorkbenchError::PolicyBlocked { .. }) => 3,
+            AppError::Domain(
+                WorkbenchError::PolicyBlocked { .. } | WorkbenchError::ProtectedBranchMisuse { .. },
+            ) => 3,
             AppError::Domain(WorkbenchError::InvalidPolicy { .. })
             | AppError::Usage { .. }
             | AppError::Io { .. } => 2,
@@ -180,6 +182,14 @@ mod tests {
     #[test]
     fn policy_blocked_uses_exit_code_3() {
         let err = AppError::Domain(WorkbenchError::PolicyBlocked { findings: vec![] });
+        assert_eq!(err.exit_code(), 3);
+    }
+
+    #[test]
+    fn protected_branch_misuse_uses_exit_code_3() {
+        let err = AppError::Domain(WorkbenchError::ProtectedBranchMisuse {
+            branch: "main".into(),
+        });
         assert_eq!(err.exit_code(), 3);
     }
 
