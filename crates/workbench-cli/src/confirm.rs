@@ -5,13 +5,7 @@ use workbench_application::AppError;
 pub fn confirm(plan: &str, yes: bool) -> Result<bool, AppError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
-    confirm_with_io(
-        plan,
-        yes,
-        stdin.is_terminal(),
-        stdin.lock(),
-        stdout.lock(),
-    )
+    confirm_with_io(plan, yes, stdin.is_terminal(), stdin.lock(), stdout.lock())
 }
 
 fn confirm_with_io<R, W>(
@@ -48,12 +42,10 @@ where
     })?;
 
     let mut answer = String::new();
-    input
-        .read_line(&mut answer)
-        .map_err(|error| AppError::Io {
-            path: "stdin".into(),
-            detail: error.to_string(),
-        })?;
+    input.read_line(&mut answer).map_err(|error| AppError::Io {
+        path: "stdin".into(),
+        detail: error.to_string(),
+    })?;
     Ok(matches!(
         answer.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
@@ -77,9 +69,8 @@ mod tests {
 
     #[test]
     fn non_terminal_without_yes_is_invalid_usage() {
-        let error =
-            confirm_with_io("Plan text", false, false, Cursor::new("yes\n"), Vec::new())
-                .unwrap_err();
+        let error = confirm_with_io("Plan text", false, false, Cursor::new("yes\n"), Vec::new())
+            .unwrap_err();
 
         assert_eq!(
             error,

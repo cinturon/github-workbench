@@ -211,9 +211,7 @@ mod tests {
     use super::*;
     use workbench_application::ports::{OperationRecord, StepRecord};
     use workbench_application::use_cases::status::StatusOutcome;
-    use workbench_domain::operations::plan::{
-        GitCommand, OperationPlan, RiskClass, StepStatus,
-    };
+    use workbench_domain::operations::plan::{GitCommand, OperationPlan, RiskClass, StepStatus};
     use workbench_domain::policy::{github_flow_defaults, PolicyFinding, Severity};
     use workbench_domain::repository::{BranchState, Remote, RepositorySnapshot};
 

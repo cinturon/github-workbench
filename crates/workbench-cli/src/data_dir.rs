@@ -56,6 +56,9 @@ mod tests {
     #[test]
     fn home_fallback() {
         let path = resolve_data_dir(vars(&[("HOME", "/home/dev")]));
-        assert_eq!(path, PathBuf::from("/home/dev/.local/share/github-workbench"));
+        assert_eq!(
+            path,
+            PathBuf::from("/home/dev/.local/share/github-workbench")
+        );
     }
 }

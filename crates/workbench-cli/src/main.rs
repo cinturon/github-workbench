@@ -93,13 +93,7 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
             let mapped_remote = store
                 .get_project_by_path(&root)?
                 .and_then(|project| project.remote_name);
-            let outcome = repository_status(
-                &git,
-                &policy,
-                &cwd,
-                mapped_remote.as_deref(),
-                None,
-            )?;
+            let outcome = repository_status(&git, &policy, &cwd, mapped_remote.as_deref(), None)?;
             if json {
                 println!("{}", render_status_json(&outcome)?);
             } else {
@@ -160,15 +154,8 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
             if !confirm(&plan_text, yes)? {
                 return Ok(RunOutcome::Aborted);
             }
-            let outcome = execute_push(
-                &git,
-                &store,
-                &policy,
-                &clock,
-                &ids,
-                &cwd,
-                remote.as_deref(),
-            )?;
+            let outcome =
+                execute_push(&git, &store, &policy, &clock, &ids, &cwd, remote.as_deref())?;
             if outcome.status == "noop" {
                 println!("Nothing to push.");
             } else {
@@ -180,8 +167,7 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
         }
         Commands::Ops { command } => match command {
             OpsCommands::List => {
-                let operations =
-                    list_project_operations(&git, &store, &current_dir()?, None)?;
+                let operations = list_project_operations(&git, &store, &current_dir()?, None)?;
                 println!("{}", render_operations(&operations));
             }
         },

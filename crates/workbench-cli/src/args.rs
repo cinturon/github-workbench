@@ -77,10 +77,7 @@ mod tests {
             Some(Commands::Issue {
                 command:
                     IssueCommands::Start {
-                        number,
-                        title,
-                        yes,
-                        ..
+                        number, title, yes, ..
                     },
             }) => {
                 assert_eq!(number, 42);
