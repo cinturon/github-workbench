@@ -1,4 +1,5 @@
 mod action;
+mod assertions;
 mod case;
 mod error;
 mod plan;
@@ -12,6 +13,9 @@ pub use case::{
     TestPermissions, TestRunner,
 };
 pub use error::TestingError;
+pub use assertions::{
+    evaluate_assertions, AssertionFailure, AssertionReport, ResultManifest,
+};
 pub use plan::{normalize_test_case, TestAssertions, TestPlan};
 pub use workflow::{
     generate_workflow, remote_test_branch, workflow_file_path,
