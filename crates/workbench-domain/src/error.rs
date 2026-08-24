@@ -1,4 +1,5 @@
 use crate::policy::PolicyFinding;
+use crate::workflow::state::WorkflowState;
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -14,6 +15,12 @@ pub enum WorkbenchError {
 
     #[error("refusing to use protected branch `{branch}` for feature work")]
     ProtectedBranchMisuse { branch: String },
+
+    #[error("illegal workflow transition from {from:?} to {to:?}")]
+    IllegalTransition {
+        from: WorkflowState,
+        to: WorkflowState,
+    },
 }
 
 #[cfg(test)]
