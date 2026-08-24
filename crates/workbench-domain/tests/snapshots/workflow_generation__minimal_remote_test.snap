@@ -1,0 +1,54 @@
+---
+source: crates/workbench-domain/tests/workflow_generation.rs
+expression: workflow
+---
+name: GitHub Workbench Test 01JABCDEF0123456789ABCDEFG
+on:
+  push:
+    branches:
+    - github-workbench/test/01JABCDEF0123456789ABCDEFG
+permissions:
+  contents: read
+concurrency:
+  group: github-workbench-test-01JABCDEF0123456789ABCDEFG
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - name: Checkout test branch
+      uses: actions/checkout@v4
+    - name: Run action under test
+      id: action-under-test
+      uses: ./
+      continue-on-error: true
+      with:
+        mode: smoke
+      env:
+        REPORT_LEVEL: summary
+    - name: Write result manifest
+      run: |-
+        cat > "$RUNNER_TEMP/github-workbench-result.json" <<'JSON'
+        {
+          "schema_version": 1,
+          "session_id": "01JABCDEF0123456789ABCDEFG",
+          "case": "smoke-composite",
+          "runner": "ubuntu-latest",
+          "action_outcome": "${{ steps.action-under-test.outcome }}",
+          "outputs": {}
+        }
+        JSON
+      shell: bash
+      if: always()
+    - name: Upload result manifest
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        if-no-files-found: error
+        name: github-workbench-result
+        path: ${{ runner.temp }}/github-workbench-result.json
+    - name: Propagate action outcome
+      run: test "${{ steps.action-under-test.outcome }}" = success
+      shell: bash
+      if: always()
