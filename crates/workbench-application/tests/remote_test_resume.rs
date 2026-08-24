@@ -38,13 +38,7 @@ fn watch_resumes_a_stored_push_without_repush() {
         )
     }));
     assert_eq!(
-        get_session_result(
-            &harness.git,
-            &harness.store,
-            harness.repo.path(),
-            "01JABC"
-        )
-        .unwrap(),
+        get_session_result(&harness.git, &harness.store, harness.repo.path(), "01JABC").unwrap(),
         Some(result)
     );
     assert_eq!(

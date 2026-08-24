@@ -197,8 +197,7 @@ impl RemoteTestHarness {
                 "completed",
                 Some("success"),
             )));
-        *harness.github.artifact_fixture.lock().unwrap() =
-            manifest_fixture("01JABC").into_bytes();
+        *harness.github.artifact_fixture.lock().unwrap() = manifest_fixture("01JABC").into_bytes();
         *harness.github.logs_fixture.lock().unwrap() = LOG_FIXTURE.as_bytes().to_vec();
         harness
     }

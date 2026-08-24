@@ -2,9 +2,7 @@ mod support;
 
 use support::RemoteTestHarness;
 use workbench_application::ports::TestSessionStore;
-use workbench_application::use_cases::cleanup::{
-    execute_cleanup, list_cleanup, plan_cleanup,
-};
+use workbench_application::use_cases::cleanup::{execute_cleanup, list_cleanup, plan_cleanup};
 use workbench_application::AppError;
 use workbench_domain::operations::plan::{GitCommand, RiskClass};
 

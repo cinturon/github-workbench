@@ -285,10 +285,10 @@ impl GithubClient for FakeGithub {
             "download-artifact {owner}/{repo} {run_id} {artifact_name}"
         ));
         fs::create_dir_all(dest_dir).map_err(|error| io_error(dest_dir, error))?;
-        let path = dest_dir.join(format!("{artifact_name}.zip"));
+        let path = dest_dir.join(format!("{artifact_name}.json"));
         fs::write(&path, self.artifact_fixture.lock().unwrap().as_slice())
             .map_err(|error| io_error(&path, error))?;
-        Ok(path)
+        Ok(dest_dir.to_path_buf())
     }
 
     fn download_run_logs(
