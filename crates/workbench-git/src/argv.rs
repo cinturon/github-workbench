@@ -7,8 +7,8 @@ pub fn command_argv(cmd: &GitCommand) -> Vec<String> {
             "checkout".into(),
             "-b".into(),
             name.clone(),
-            "--".into(),
             start_point.clone(),
+            "--".into(),
         ],
         GitCommand::PushRef {
             remote,
@@ -88,8 +88,8 @@ mod tests {
                 "checkout",
                 "-b",
                 "feature/42-add-resumable-uploads",
-                "--",
-                "main"
+                "main",
+                "--"
             ]
         );
     }
