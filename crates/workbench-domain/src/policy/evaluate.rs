@@ -5,9 +5,9 @@ pub fn evaluate_current_branch_policy(policy: &PolicyConfig, branch: &str) -> Ve
         return Vec::new();
     }
     let allowed = &policy.branches.allowed_prefixes;
-    let matches_prefix = allowed.iter().any(|prefix| {
-        branch == prefix.as_str() || branch.starts_with(&format!("{prefix}/"))
-    });
+    let matches_prefix = allowed
+        .iter()
+        .any(|prefix| branch == prefix.as_str() || branch.starts_with(&format!("{prefix}/")));
     if matches_prefix {
         return Vec::new();
     }

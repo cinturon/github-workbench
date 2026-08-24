@@ -20,14 +20,9 @@ fn plans_feature_branch_for_issue_42() {
     let policy = github_flow_defaults();
     let current = branch_state("main");
 
-    let plan = plan_create_branch_from_issue(
-        &policy,
-        42,
-        "Add resumable uploads",
-        &current,
-        "origin",
-    )
-    .unwrap();
+    let plan =
+        plan_create_branch_from_issue(&policy, 42, "Add resumable uploads", &current, "origin")
+            .unwrap();
 
     assert!(plan.summary.contains("feature/42-add-resumable-uploads"));
     assert!(matches!(
@@ -45,8 +40,7 @@ fn rejects_issue_zero() {
     let policy = github_flow_defaults();
     let current = branch_state("main");
 
-    let err =
-        plan_create_branch_from_issue(&policy, 0, "Nope", &current, "origin").unwrap_err();
+    let err = plan_create_branch_from_issue(&policy, 0, "Nope", &current, "origin").unwrap_err();
 
     assert!(matches!(
         err,
@@ -59,14 +53,9 @@ fn rejects_issue_zero() {
 fn fetch_uses_provided_remote_not_origin() {
     let policy = github_flow_defaults();
     let current = branch_state("topic");
-    let plan = plan_create_branch_from_issue(
-        &policy,
-        42,
-        "Add resumable uploads",
-        &current,
-        "github",
-    )
-    .unwrap();
+    let plan =
+        plan_create_branch_from_issue(&policy, 42, "Add resumable uploads", &current, "github")
+            .unwrap();
     assert!(matches!(
         plan.commands.first(),
         Some(workbench_domain::operations::plan::GitCommand::Fetch { remote })

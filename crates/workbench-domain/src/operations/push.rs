@@ -45,9 +45,9 @@ pub fn plan_push(
         None => {
             "No upstream is set; the push will create the remote branch and set upstream.".into()
         }
-        Some(upstream) => format!(
-            "Upstream is `{upstream}`; this updates the existing remote feature branch."
-        ),
+        Some(upstream) => {
+            format!("Upstream is `{upstream}`; this updates the existing remote feature branch.")
+        }
     };
 
     Ok(OperationPlan {
