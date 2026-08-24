@@ -210,14 +210,11 @@ fn command_description(command: &GitCommand) -> String {
             remote_ref,
             ..
         } => format!("Pushed `{local_ref}` to `{remote}/{remote_ref}`."),
-        GitCommand::CommitPaths { message, paths } => {
-            format!(
-                "Committed {} path(s) with message `{message}`.",
-                paths.len()
-            )
+        GitCommand::CommitPaths { paths, .. } => {
+            format!("Committed generated paths: {}.", paths.join(", "))
         }
         GitCommand::DeleteRemoteRef { remote, ref_name } => {
-            format!("Deleted remote ref `{remote}/{ref_name}`.")
+            format!("Deleted temporary ref `{remote}/{ref_name}`.")
         }
     }
 }

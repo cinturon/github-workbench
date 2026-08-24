@@ -38,6 +38,23 @@ fn git(home: &Path, cwd: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed");
 }
 
+fn git_output(home: &Path, cwd: &Path, args: &[&str]) -> String {
+    let config = home.join("gitconfig");
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .envs(sanitized_env(&[
+            ("HOME".into(), home.display().to_string()),
+            ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
+            ("GIT_CONFIG_GLOBAL".into(), config.display().to_string()),
+        ]))
+        .output()
+        .expect("git must be installed");
+    assert!(output.status.success(), "git {args:?} failed");
+    String::from_utf8(output.stdout).expect("git stdout must be utf-8")
+}
+
 fn harness() -> Harness {
     let tmp = TempDir::new().unwrap();
     let home = tmp.path().join("home");
@@ -158,4 +175,69 @@ fn create_branch_resolves_start_from_listed_remote() {
     let snapshot = client.snapshot(&h.work).unwrap();
     assert_eq!(snapshot.branch.as_deref(), Some("feature/from-remote"));
     assert_eq!(snapshot.remotes[0].name, "upstream");
+}
+
+#[test]
+fn commit_paths_push_rev_parse_and_delete_remote_ref() {
+    let h = harness();
+    let client = ProcessGitClient::new(StdProcessRunner).with_extra_env(h.extra_env.clone());
+    let root = client.resolve_toplevel(&h.work).unwrap();
+    let remote_name = client.snapshot(&root).unwrap().remotes[0].name.clone();
+    let workflow_path = ".github/workflows/github-workbench-test-01JABC.yml";
+    let remote_ref = "github-workbench/test/01JABC";
+
+    fs::create_dir_all(root.join(".github/workflows")).unwrap();
+    fs::write(
+        root.join(workflow_path),
+        "name: remote action test\non: workflow_dispatch\njobs:\n  noop:\n    runs-on: ubuntu-latest\n",
+    )
+    .unwrap();
+
+    client
+        .commit_paths(
+            &root,
+            "chore: add remote action test",
+            &[workflow_path.into()],
+        )
+        .unwrap();
+
+    let committed_paths = git_output(
+        &h.home,
+        &root,
+        &["show", "--name-only", "--format=", "HEAD"],
+    );
+    assert_eq!(
+        committed_paths.trim(),
+        workflow_path,
+        "commit should include only the generated workflow path"
+    );
+
+    let pushed_sha = client
+        .rev_parse(&root, "HEAD")
+        .unwrap()
+        .expect("HEAD should resolve after commit_paths");
+
+    client
+        .push_ref(&root, &remote_name, "HEAD", remote_ref, false)
+        .unwrap();
+    client.fetch(&root, &remote_name).unwrap();
+
+    let fetched_sha = client
+        .rev_parse(
+            &root,
+            &format!("refs/remotes/{remote_name}/{remote_ref}"),
+        )
+        .unwrap()
+        .expect("pushed ref should resolve after fetch");
+    assert_eq!(fetched_sha, pushed_sha);
+
+    client
+        .delete_remote_ref(&root, &remote_name, remote_ref)
+        .unwrap();
+
+    let remote_heads = git_output(&h.home, &root, &["ls-remote", "--heads", "origin"]);
+    assert!(
+        !remote_heads.contains(remote_ref),
+        "remote ref should be deleted: {remote_heads}"
+    );
 }
