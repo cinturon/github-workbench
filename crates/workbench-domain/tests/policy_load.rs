@@ -1,4 +1,4 @@
-use workbench_domain::policy::{github_flow_defaults, parse_policy_yaml};
+use workbench_domain::policy::{github_flow_defaults, parse_policy_yaml, Severity};
 use workbench_domain::WorkbenchError;
 
 #[test]
@@ -28,6 +28,44 @@ typo-field: true
     match err {
         WorkbenchError::InvalidPolicy { findings } => {
             assert!(findings.iter().any(|f| f.rule_id.contains("unknown")));
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn unsupported_schema_version_has_specific_blocker() {
+    let yaml = r#"
+schema-version: 2
+strategy:
+  preset: github-flow
+  default-branch: main
+"#;
+    let err = parse_policy_yaml(yaml).unwrap_err();
+    match err {
+        WorkbenchError::InvalidPolicy { findings } => {
+            assert_eq!(findings.len(), 1);
+            assert_eq!(findings[0].rule_id, "policy.schema-version");
+            assert_eq!(findings[0].severity, Severity::Blocker);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn unsupported_preset_has_specific_blocker() {
+    let yaml = r#"
+schema-version: 1
+strategy:
+  preset: git-flow
+  default-branch: main
+"#;
+    let err = parse_policy_yaml(yaml).unwrap_err();
+    match err {
+        WorkbenchError::InvalidPolicy { findings } => {
+            assert_eq!(findings.len(), 1);
+            assert_eq!(findings[0].rule_id, "policy.strategy.preset");
+            assert_eq!(findings[0].severity, Severity::Blocker);
         }
         other => panic!("unexpected {other:?}"),
     }

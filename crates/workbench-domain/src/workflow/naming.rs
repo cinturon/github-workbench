@@ -73,6 +73,7 @@ mod property_tests {
                 prop_assert!(!slug.contains('@'));
                 prop_assert!(!slug.contains('\\'));
                 prop_assert!(!slug.is_empty());
+                prop_assert_eq!(normalize_slug(&slug)?, slug);
             }
         }
     }

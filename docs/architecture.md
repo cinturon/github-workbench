@@ -9,5 +9,9 @@ GitHub Workflow Workbench uses a layered Rust core:
 
 Phase 1 implements domain logic only. Adapter and CLI crates are stubs.
 
+Policy parsing in Phase 1 does not support partial nested overrides for
+`BranchTypeConfig`: when `branches.feature` or `branches.fix` is present, its
+`pattern`, `start-from`, and `require-issue` fields are all required.
+
 Product design: `docs/product/GITHUB_WORKFLOW_WORKBENCH_DESIGN.md`.
 Phase 1 spec: `docs/superpowers/specs/2026-08-23-phase1-domain-foundation-design.md`.
