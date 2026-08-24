@@ -32,7 +32,7 @@ fn snapshot(branch: &str, remotes: Vec<Remote>) -> RepositorySnapshot {
     }
 }
 
-fn branch(name: &str, ahead: u32) -> BranchState {
+fn branch(name: &str, ahead: u64) -> BranchState {
     BranchState {
         name: name.into(),
         head_oid: Some("abc".into()),
