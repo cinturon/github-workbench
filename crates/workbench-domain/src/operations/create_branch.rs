@@ -10,6 +10,7 @@ pub fn plan_create_branch_from_issue(
     issue: u64,
     title: &str,
     current: &BranchState,
+    remote: &str,
 ) -> Result<OperationPlan, WorkbenchError> {
     if issue == 0 {
         return Err(WorkbenchError::InvalidBranchName {
@@ -40,7 +41,7 @@ pub fn plan_create_branch_from_issue(
             current.name
         ));
         commands.push(GitCommand::Fetch {
-            remote: "origin".into(),
+            remote: remote.into(),
         });
     }
 
