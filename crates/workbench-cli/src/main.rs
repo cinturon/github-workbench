@@ -5,25 +5,39 @@ mod render;
 
 use std::path::Path;
 
-use args::{Cli, Commands, IssueCommands, OpsCommands};
+use args::{
+    ActionCommands, CleanupCommands, Cli, Commands, IssueCommands, OpsCommands, RunsCommands,
+};
 use clap::Parser;
-use workbench_application::clock::SystemClock;
+use workbench_application::clock::{SystemClock, ThreadSleeper};
 use workbench_application::ids::UlidGenerator;
 use workbench_application::policy_source::FilePolicySource;
 use workbench_application::ports::{GitClient, OperationStore};
+use workbench_application::use_cases::action_discovery::{
+    discover_action_tests, ActionTestCatalog,
+};
+use workbench_application::use_cases::cleanup::{execute_cleanup, list_cleanup, plan_cleanup};
 use workbench_application::use_cases::open::open_repository;
 use workbench_application::use_cases::ops::list_project_operations;
 use workbench_application::use_cases::push::{execute_push, plan_push_changes};
+use workbench_application::use_cases::remote_test::{
+    execute_remote_test, plan_remote_test, watch_session,
+};
 use workbench_application::use_cases::start_issue::{execute_start_issue, plan_start_issue};
 use workbench_application::use_cases::status::repository_status;
+use workbench_application::use_cases::test_sessions::list_sessions;
 use workbench_application::AppError;
 use workbench_domain::operations::plan::GitCommand;
 use workbench_git::{ProcessGitClient, StdProcessRunner};
+use workbench_github::ProcessGithubClient;
 use workbench_storage::SqliteStore;
 
 use crate::confirm::confirm;
 use crate::data_dir::resolve_data_dir;
-use crate::render::{render_operations, render_plan, render_status, render_status_json};
+use crate::render::{
+    render_action_catalog, render_cleanup, render_operations, render_plan, render_remote_test_plan,
+    render_remote_test_result, render_sessions, render_status, render_status_json,
+};
 
 enum RunOutcome {
     Success,
@@ -161,9 +175,109 @@ fn run(cli: Cli) -> Result<RunOutcome, AppError> {
                 println!("{}", render_operations(&operations));
             }
         },
+        Commands::Action { command } => match command {
+            ActionCommands::Discover => {
+                let root = git.resolve_toplevel(&current_dir()?)?;
+                let catalog = discover_action_tests(&root)?;
+                println!("{}", render_action_catalog(&catalog));
+            }
+            ActionCommands::Test { name, yes } => {
+                let cwd = current_dir()?;
+                let root = git.resolve_toplevel(&cwd)?;
+                let catalog = discover_action_tests(&root)?;
+                let test_name = select_test_name(name, &catalog)?;
+                let plan = plan_remote_test(&git, &store, &policy, &ids, &cwd, &test_name, None)?;
+                println!("{}", render_remote_test_plan(&plan));
+                if !confirm(yes)? {
+                    return Ok(RunOutcome::Aborted);
+                }
+                let github = ProcessGithubClient::new(StdProcessRunner, root);
+                let sleeper = ThreadSleeper;
+                let result = execute_remote_test(
+                    &git,
+                    &github,
+                    &store,
+                    &clock,
+                    &ids,
+                    &sleeper,
+                    &plan,
+                    &data_dir.join("evidence"),
+                )?;
+                println!("{}", render_remote_test_result(&result));
+            }
+        },
+        Commands::Runs { command } => match command {
+            RunsCommands::List => {
+                let sessions = list_sessions(&git, &store, &current_dir()?)?;
+                println!("{}", render_sessions(&sessions));
+            }
+            RunsCommands::Watch { session_id } => {
+                let cwd = current_dir()?;
+                let root = git.resolve_toplevel(&cwd)?;
+                let github = ProcessGithubClient::new(StdProcessRunner, root);
+                let sleeper = ThreadSleeper;
+                let result = watch_session(
+                    &git,
+                    &github,
+                    &store,
+                    &clock,
+                    &ids,
+                    &sleeper,
+                    &cwd,
+                    &session_id,
+                    &data_dir.join("evidence"),
+                    true,
+                )?;
+                println!("{}", render_remote_test_result(&result));
+            }
+        },
+        Commands::Cleanup { command } => match command {
+            CleanupCommands::List => {
+                let items = list_cleanup(&git, &store, &current_dir()?)?;
+                println!("{}", render_cleanup(&items));
+            }
+            CleanupCommands::Run { item_id, yes } => {
+                let cwd = current_dir()?;
+                let root = git.resolve_toplevel(&cwd)?;
+                let (plan, _, _) = plan_cleanup(&git, &store, &cwd, &item_id)?;
+                println!("{}", render_plan(&plan));
+                if !confirm(yes)? {
+                    return Ok(RunOutcome::Aborted);
+                }
+                let github = ProcessGithubClient::new(StdProcessRunner, root);
+                let outcome = execute_cleanup(&git, &github, &store, &clock, &ids, &cwd, &item_id)?;
+                println!("Cleanup completed.");
+                println!("Operation id: {}", outcome.operation_id);
+            }
+        },
     }
 
     Ok(RunOutcome::Success)
+}
+
+fn select_test_name(
+    requested: Option<String>,
+    catalog: &ActionTestCatalog,
+) -> Result<String, AppError> {
+    if let Some(name) = requested {
+        return Ok(name);
+    }
+    match catalog.tests.as_slice() {
+        [test] => Ok(test.name.clone()),
+        [] => Err(AppError::Usage {
+            message: "no remote action tests were discovered".into(),
+        }),
+        tests => Err(AppError::Usage {
+            message: format!(
+                "more than one remote action test was discovered; choose one: {}",
+                tests
+                    .iter()
+                    .map(|test| test.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }),
+    }
 }
 
 fn current_dir() -> Result<std::path::PathBuf, AppError> {

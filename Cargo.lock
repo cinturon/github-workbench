@@ -937,6 +937,7 @@ dependencies = [
  "workbench-application",
  "workbench-domain",
  "workbench-git",
+ "workbench-github",
  "workbench-storage",
 ]
 

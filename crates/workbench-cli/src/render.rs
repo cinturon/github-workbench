@@ -1,12 +1,17 @@
 use std::fmt::Write as _;
 
 use serde::Serialize;
-use workbench_application::ports::OperationRecord;
+use workbench_application::action_tests::{
+    RemoteTestResult, RemoteTestSessionPlan, TestSessionStatus,
+};
+use workbench_application::ports::{CleanupItemRecord, OperationRecord, TestSessionRecord};
+use workbench_application::use_cases::action_discovery::ActionTestCatalog;
 use workbench_application::use_cases::status::StatusOutcome;
 use workbench_application::AppError;
 use workbench_domain::operations::plan::{OperationPlan, RiskClass, StepStatus};
 use workbench_domain::policy::{PolicyFinding, Severity};
 use workbench_domain::repository::Remote;
+use workbench_domain::testing::{ActionRuntime, RESULT_ARTIFACT_NAME};
 use workbench_git::describe_command;
 
 pub fn render_plan(plan: &OperationPlan) -> String {
@@ -26,6 +31,91 @@ pub fn render_plan(plan: &OperationPlan) -> String {
 
     write_list(&mut output, "Rationale", &plan.rationale);
     write_findings(&mut output, &plan.findings);
+    output.trim_end().to_string()
+}
+
+pub fn render_remote_test_plan(plan: &RemoteTestSessionPlan) -> String {
+    let mut output = render_plan(&plan.git_plan);
+    let _ = writeln!(output);
+    let _ = writeln!(output, "Generated workflow: {}", plan.workflow_path);
+    let _ = writeln!(
+        output,
+        "Generated branch: {}",
+        plan.cleanup_identity.ref_name
+    );
+    let _ = writeln!(output, "Repository: {}/{}", plan.owner, plan.repo);
+    let _ = writeln!(output, "Expected runner: {}", plan.test_plan.runner);
+    let _ = writeln!(output, "Artifact: {RESULT_ARTIFACT_NAME}");
+    let _ = writeln!(output, "Estimated jobs: 1");
+    let _ = writeln!(
+        output,
+        "Cleanup policy: Success: {}h; failure: {}h",
+        plan.successful_ref_retention.0, plan.failed_ref_retention.0
+    );
+    output.trim_end().to_string()
+}
+
+pub fn render_action_catalog(catalog: &ActionTestCatalog) -> String {
+    let mut output = String::new();
+    let _ = writeln!(output, "Actions:");
+    if catalog.actions.is_empty() {
+        let _ = writeln!(output, "  (none)");
+    } else {
+        for action in &catalog.actions {
+            let runtime = match &action.definition.runtime {
+                ActionRuntime::Composite => "composite",
+                ActionRuntime::Unsupported { using } => using,
+            };
+            let support = if action.supported {
+                "supported"
+            } else {
+                "unsupported"
+            };
+            let _ = writeln!(
+                output,
+                "  {}  {}  {}  {}",
+                action.definition.name, runtime, support, action.definition.manifest_path
+            );
+            if let Some(warning) = &action.warning {
+                let _ = writeln!(output, "    Warning: {warning}");
+            }
+        }
+    }
+    let _ = writeln!(output, "Tests:");
+    if catalog.tests.is_empty() {
+        let _ = writeln!(output, "  (none)");
+    } else {
+        for test in &catalog.tests {
+            let _ = writeln!(output, "  {}  {}", test.name, test.path.display());
+        }
+    }
+    output.trim_end().to_string()
+}
+
+pub fn render_remote_test_result(result: &RemoteTestResult) -> String {
+    let mut output = String::new();
+    let _ = writeln!(output, "Session id: {}", result.session_id);
+    let _ = writeln!(output, "Run URL: {}", result.run_url);
+    let _ = writeln!(output, "Conclusion: {}", result.conclusion);
+    let _ = writeln!(
+        output,
+        "Assertions: {}",
+        if result.passed { "passed" } else { "failed" }
+    );
+    let _ = writeln!(
+        output,
+        "Manifest: {}",
+        result
+            .manifest_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "(not downloaded)".into())
+    );
+    let _ = writeln!(output, "Logs: {}", result.logs_path.display());
+    let _ = writeln!(
+        output,
+        "Cleanup: run `gww cleanup list` to inspect the temporary ref."
+    );
     output.trim_end().to_string()
 }
 
@@ -152,6 +242,55 @@ pub fn render_operations(operations: &[OperationRecord]) -> String {
     output.trim_end().to_string()
 }
 
+pub fn render_sessions(sessions: &[TestSessionRecord]) -> String {
+    if sessions.is_empty() {
+        return "No remote test sessions recorded.".into();
+    }
+
+    let mut output = String::new();
+    let _ = writeln!(
+        output,
+        "{:<11} {:<12} {:<9} REMOTE REF",
+        "SESSION", "STATUS", "RUN"
+    );
+    for session in sessions {
+        let run_id = session
+            .run_id
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".into());
+        let _ = writeln!(
+            output,
+            "{:<11} {:<12} {:<9} {}",
+            session.session_id,
+            session_status_label(&session.status),
+            run_id,
+            session.remote_ref
+        );
+    }
+    output.trim_end().to_string()
+}
+
+pub fn render_cleanup(items: &[CleanupItemRecord]) -> String {
+    if items.is_empty() {
+        return "No cleanup items recorded.".into();
+    }
+
+    let mut output = String::new();
+    let _ = writeln!(
+        output,
+        "{:<12} {:<12} {:<22} RESOURCE",
+        "ITEM", "STATUS", "DUE"
+    );
+    for item in items {
+        let _ = writeln!(
+            output,
+            "{:<12} {:<12} {:<22} {}",
+            item.id, item.status, item.due_at, item.resource_id
+        );
+    }
+    output.trim_end().to_string()
+}
+
 fn write_list(output: &mut String, heading: &str, items: &[String]) {
     let _ = writeln!(output, "{heading}:");
     if items.is_empty() {
@@ -206,14 +345,34 @@ fn step_status_label(status: StepStatus) -> &'static str {
     }
 }
 
+fn session_status_label(status: &TestSessionStatus) -> &'static str {
+    match status {
+        TestSessionStatus::Planned => "planned",
+        TestSessionStatus::Pushed => "pushed",
+        TestSessionStatus::Queued => "queued",
+        TestSessionStatus::InProgress => "in-progress",
+        TestSessionStatus::Passed => "passed",
+        TestSessionStatus::Failed => "failed",
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
     use super::*;
-    use workbench_application::ports::{OperationRecord, StepRecord};
+    use workbench_application::action_tests::{
+        CleanupIdentity, RemoteTestSessionPlan, TestSessionStatus,
+    };
+    use workbench_application::ports::{
+        CleanupItemRecord, OperationRecord, StepRecord, TestSessionRecord,
+    };
     use workbench_application::use_cases::status::StatusOutcome;
     use workbench_domain::operations::plan::{GitCommand, OperationPlan, RiskClass, StepStatus};
-    use workbench_domain::policy::{github_flow_defaults, PolicyFinding, Severity};
+    use workbench_domain::policy::{github_flow_defaults, PolicyFinding, RetentionHours, Severity};
     use workbench_domain::repository::{BranchState, Remote, RepositorySnapshot};
+    use workbench_domain::testing::{TestAssertions, TestPermissions, TestPlan};
 
     fn finding() -> PolicyFinding {
         PolicyFinding {
@@ -338,5 +497,120 @@ mod tests {
         assert!(output.contains("push"));
         assert!(output.contains("succeeded"));
         assert!(output.contains("1. push-ref"));
+    }
+
+    #[test]
+    fn remote_test_plan_includes_remote_execution_details() {
+        let assertions = TestAssertions {
+            conclusion: "success".into(),
+            log_contains: vec![],
+            log_not_contains: vec![],
+        };
+        let plan = RemoteTestSessionPlan {
+            project_id: "project-1".into(),
+            repo_root: PathBuf::from("/repo"),
+            owner: "acme".into(),
+            repo: "widgets".into(),
+            remote: "origin".into(),
+            base_sha: "abc123".into(),
+            session_id: "01JABC".into(),
+            workflow_file_name: "github-workbench-test-01JABC.yml".into(),
+            workflow_path: ".github/workflows/github-workbench-test-01JABC.yml".into(),
+            workflow_yaml: "name: test".into(),
+            test_plan: TestPlan {
+                name: "smoke-composite".into(),
+                description: None,
+                action_path: ".github/actions/smoke".into(),
+                runner: "ubuntu-latest".into(),
+                timeout_minutes: 15,
+                permissions: TestPermissions::default(),
+                inputs: BTreeMap::new(),
+                environment: BTreeMap::new(),
+                assertions: assertions.clone(),
+            },
+            assertions,
+            successful_ref_retention: RetentionHours(0),
+            failed_ref_retention: RetentionHours(72),
+            cleanup_identity: CleanupIdentity {
+                remote: "origin".into(),
+                ref_name: "github-workbench/test/01JABC".into(),
+                session_id: "01JABC".into(),
+            },
+            git_plan: OperationPlan {
+                id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().unwrap(),
+                kind: "remote-action-test".into(),
+                risk: RiskClass::Medium,
+                summary: "Run remote action test".into(),
+                rationale: vec![],
+                commands: vec![GitCommand::PushRef {
+                    remote: "origin".into(),
+                    local_ref: "github-workbench/test/01JABC".into(),
+                    remote_ref: "github-workbench/test/01JABC".into(),
+                    set_upstream: false,
+                }],
+                preconditions: vec!["The working tree remains clean.".into()],
+                findings: vec![],
+            },
+        };
+
+        let output = render_remote_test_plan(&plan);
+
+        for expected in [
+            "Risk: medium",
+            "The working tree remains clean.",
+            ".github/workflows/github-workbench-test-01JABC.yml",
+            "github-workbench/test/01JABC",
+            "git push -- origin github-workbench/test/01JABC:github-workbench/test/01JABC",
+            "acme/widgets",
+            "ubuntu-latest",
+            "github-workbench-result",
+            "Estimated jobs: 1",
+            "Success: 0h; failure: 72h",
+        ] {
+            assert!(
+                output.contains(expected),
+                "remote plan did not contain {expected:?}:\n{output}"
+            );
+        }
+    }
+
+    #[test]
+    fn session_and_cleanup_lists_have_stable_tables() {
+        let sessions = vec![TestSessionRecord {
+            id: "row-1".into(),
+            project_id: "project-1".into(),
+            session_id: "01JABC".into(),
+            commit_sha: "abc123".into(),
+            remote_ref: "github-workbench/test/01JABC".into(),
+            workflow_name: "workflow.yml".into(),
+            run_id: Some(42),
+            status: TestSessionStatus::Passed,
+            result_json: "{}".into(),
+            evidence_dir: None,
+            created_at: "2026-08-24T00:00:00Z".into(),
+            updated_at: "2026-08-24T00:00:00Z".into(),
+        }];
+        let cleanup = vec![CleanupItemRecord {
+            id: "cleanup-1".into(),
+            project_id: "project-1".into(),
+            resource_kind: "remote-git-ref".into(),
+            resource_id: "origin/github-workbench/test/01JABC".into(),
+            expected_identity: "{}".into(),
+            due_at: "2026-08-24T00:00:00Z".into(),
+            status: "pending".into(),
+            created_at: "2026-08-24T00:00:00Z".into(),
+            updated_at: "2026-08-24T00:00:00Z".into(),
+        }];
+
+        assert_eq!(
+            render_sessions(&sessions),
+            "SESSION     STATUS       RUN       REMOTE REF\n\
+             01JABC      passed       42        github-workbench/test/01JABC"
+        );
+        assert_eq!(
+            render_cleanup(&cleanup),
+            "ITEM         STATUS       DUE                    RESOURCE\n\
+             cleanup-1    pending      2026-08-24T00:00:00Z   origin/github-workbench/test/01JABC"
+        );
     }
 }

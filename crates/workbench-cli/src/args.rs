@@ -36,6 +36,18 @@ pub enum Commands {
         #[command(subcommand)]
         command: OpsCommands,
     },
+    Action {
+        #[command(subcommand)]
+        command: ActionCommands,
+    },
+    Runs {
+        #[command(subcommand)]
+        command: RunsCommands,
+    },
+    Cleanup {
+        #[command(subcommand)]
+        command: CleanupCommands,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -54,6 +66,32 @@ pub enum IssueCommands {
 #[derive(Debug, Subcommand)]
 pub enum OpsCommands {
     List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ActionCommands {
+    Discover,
+    Test {
+        name: Option<String>,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RunsCommands {
+    List,
+    Watch { session_id: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CleanupCommands {
+    List,
+    Run {
+        item_id: String,
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[cfg(test)]
@@ -112,5 +150,50 @@ mod tests {
     #[test]
     fn issue_start_requires_title() {
         assert!(Cli::try_parse_from(["gww", "issue", "start", "42"]).is_err());
+    }
+
+    #[test]
+    fn parses_phase_three_commands() {
+        assert!(matches!(
+            Cli::try_parse_from(["gww", "action", "discover"])
+                .unwrap()
+                .command,
+            Some(Commands::Action {
+                command: ActionCommands::Discover
+            })
+        ));
+
+        assert!(matches!(
+            Cli::try_parse_from(["gww", "action", "test", "smoke-composite", "--yes"])
+                .unwrap()
+                .command,
+            Some(Commands::Action {
+                command: ActionCommands::Test {
+                    name: Some(_),
+                    yes: true
+                }
+            })
+        ));
+
+        assert!(matches!(
+            Cli::try_parse_from(["gww", "runs", "watch", "01JABC"])
+                .unwrap()
+                .command,
+            Some(Commands::Runs {
+                command: RunsCommands::Watch { session_id }
+            }) if session_id == "01JABC"
+        ));
+
+        assert!(matches!(
+            Cli::try_parse_from(["gww", "cleanup", "run", "cleanup-1", "--yes"])
+                .unwrap()
+                .command,
+            Some(Commands::Cleanup {
+                command: CleanupCommands::Run {
+                    item_id,
+                    yes: true
+                }
+            }) if item_id == "cleanup-1"
+        ));
     }
 }
