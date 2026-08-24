@@ -2,4 +2,7 @@
 
 SQLite persistence for project mappings and the operation journal.
 
-Uses bundled `rusqlite`, versioned SQL migrations, and implements `OperationStore` from `workbench-application`.
+Phase 2 uses bundled `rusqlite` and versioned SQL migrations to store projects,
+operations, and operation steps. The crate implements `OperationStore` from
+`workbench-application`, including journal status transitions and bounded,
+redacted step output.

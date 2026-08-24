@@ -11,7 +11,6 @@ struct Harness {
     home: PathBuf,
     gitconfig: PathBuf,
     data_dir: PathBuf,
-    remote: PathBuf,
     work: PathBuf,
     remote_name: String,
 }
@@ -22,7 +21,6 @@ impl Harness {
         let home = temp.path().join("home");
         let data_dir = temp.path().join("data");
         fs::create_dir_all(&home).expect("create isolated home");
-        fs::create_dir_all(&data_dir).expect("create isolated data directory");
 
         let gitconfig = home.join("gitconfig");
         fs::write(
@@ -75,7 +73,6 @@ impl Harness {
             home,
             gitconfig,
             data_dir,
-            remote,
             work,
             remote_name,
         }
