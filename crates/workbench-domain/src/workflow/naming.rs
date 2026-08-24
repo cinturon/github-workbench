@@ -39,8 +39,7 @@ pub fn branch_name(pattern: &str, issue: u64, title: &str) -> Result<String, Wor
 
 fn is_forbidden_ref_char(c: char) -> bool {
     // Git disallows ASCII control chars (incl. NUL, DEL) and these punctuation chars in refs.
-    c.is_ascii_control()
-        || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\')
+    c.is_ascii_control() || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\')
 }
 
 fn validate_branch_ref(name: &str) -> Result<(), WorkbenchError> {

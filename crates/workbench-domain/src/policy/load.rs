@@ -18,7 +18,13 @@ pub fn parse_policy_yaml(yaml: &str) -> Result<PolicyConfig, WorkbenchError> {
             )
         };
 
-        invalid_policy(rule_id, "valid policy schema v1", detail, message, remediation)
+        invalid_policy(
+            rule_id,
+            "valid policy schema v1",
+            detail,
+            message,
+            remediation,
+        )
     })?;
 
     if config.schema_version != 1 {

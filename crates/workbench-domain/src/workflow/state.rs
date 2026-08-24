@@ -25,9 +25,18 @@ pub fn can_transition(from: WorkflowState, to: WorkflowState) -> bool {
             | (WorkflowState::ChangesPresent, WorkflowState::Committed)
             | (WorkflowState::Committed, WorkflowState::Pushed)
             | (WorkflowState::Pushed, WorkflowState::PullRequestDraft)
-            | (WorkflowState::PullRequestDraft, WorkflowState::ValidationPending)
-            | (WorkflowState::ValidationPending, WorkflowState::ReviewPending)
-            | (WorkflowState::ValidationPending, WorkflowState::ValidationPending)
+            | (
+                WorkflowState::PullRequestDraft,
+                WorkflowState::ValidationPending
+            )
+            | (
+                WorkflowState::ValidationPending,
+                WorkflowState::ReviewPending
+            )
+            | (
+                WorkflowState::ValidationPending,
+                WorkflowState::ValidationPending
+            )
             | (WorkflowState::ReviewPending, WorkflowState::ReadyToMerge)
             | (WorkflowState::ReadyToMerge, WorkflowState::Merged)
             | (WorkflowState::Merged, WorkflowState::CleanupPending)
