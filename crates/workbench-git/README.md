@@ -1,1 +1,1 @@
-Phase 2+ stub.
+Process-based Git adapter. Phase 2.

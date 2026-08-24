@@ -711,6 +711,13 @@ dependencies = [
 [[package]]
 name = "workbench-git"
 version = "0.1.0"
+dependencies = [
+ "pretty_assertions",
+ "tempfile",
+ "thiserror",
+ "workbench-application",
+ "workbench-domain",
+]
 
 [[package]]
 name = "workbench-github"
