@@ -80,7 +80,10 @@ where
 
         if matches!(
             command,
-            GitCommand::CreateBranch { .. } | GitCommand::PushRef { .. }
+            GitCommand::CreateBranch { .. }
+                | GitCommand::PushRef { .. }
+                | GitCommand::CommitPaths { .. }
+                | GitCommand::DeleteRemoteRef { .. }
         ) {
             mutating_step_started = true;
         }
@@ -175,6 +178,10 @@ fn execute_command<G: GitClient>(
             remote_ref,
             set_upstream,
         } => git.push_ref(root, remote, local_ref, remote_ref, *set_upstream),
+        GitCommand::CommitPaths { message, paths } => git.commit_paths(root, message, paths),
+        GitCommand::DeleteRemoteRef { remote, ref_name } => {
+            git.delete_remote_ref(root, remote, ref_name)
+        }
     }
 }
 
@@ -203,5 +210,14 @@ fn command_description(command: &GitCommand) -> String {
             remote_ref,
             ..
         } => format!("Pushed `{local_ref}` to `{remote}/{remote_ref}`."),
+        GitCommand::CommitPaths { message, paths } => {
+            format!(
+                "Committed {} path(s) with message `{message}`.",
+                paths.len()
+            )
+        }
+        GitCommand::DeleteRemoteRef { remote, ref_name } => {
+            format!("Deleted remote ref `{remote}/{ref_name}`.")
+        }
     }
 }

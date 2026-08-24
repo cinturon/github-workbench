@@ -1,13 +1,18 @@
 use std::cell::RefCell;
+use std::collections::{BTreeMap, VecDeque};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use ulid::Ulid;
 
 use crate::error::AppError;
 use crate::ports::{
-    Clock, CommandOutput, GitClient, IdGenerator, NewProject, OperationRecord, OperationStore,
-    PolicySource, ProjectRecord, StepRecord,
+    CleanupItemRecord, Clock, CommandOutput, GitClient, GithubClient, IdGenerator, NewCleanupItem,
+    NewProject, NewTestSession, OperationRecord, OperationStore, PolicySource, ProjectRecord,
+    Sleeper, StepRecord, TestSessionRecord, TestSessionStore, TestSessionUpdate, WorkflowRunDetail,
+    WorkflowRunSummary,
 };
 use workbench_domain::operations::plan::{GitCommand, OperationPlan, StepStatus};
 use workbench_domain::repository::{BranchState, Remote, RepositorySnapshot};
@@ -58,6 +63,7 @@ pub struct FakeGit {
     pub branch: RefCell<BranchState>,
     pub executed: RefCell<Vec<GitCommand>>,
     pub fail_kind: RefCell<Option<String>>,
+    pub refs: RefCell<BTreeMap<String, String>>,
 }
 
 impl FakeGit {
@@ -138,11 +144,193 @@ impl GitClient for FakeGit {
         });
         self.maybe_fail("push-ref")
     }
+
+    fn commit_paths(
+        &self,
+        _repo_root: &Path,
+        message: &str,
+        paths: &[String],
+    ) -> Result<CommandOutput, AppError> {
+        self.executed.borrow_mut().push(GitCommand::CommitPaths {
+            message: message.into(),
+            paths: paths.to_vec(),
+        });
+        let out = self.maybe_fail("commit-paths")?;
+        let commit_number = self
+            .executed
+            .borrow()
+            .iter()
+            .filter(|command| matches!(command, GitCommand::CommitPaths { .. }))
+            .count();
+        let sha = format!("fake-commit-{commit_number}");
+        self.refs.borrow_mut().insert("HEAD".into(), sha.clone());
+        self.snapshot.borrow_mut().head_oid = Some(sha.clone());
+        self.branch.borrow_mut().head_oid = Some(sha);
+        Ok(out)
+    }
+
+    fn delete_remote_ref(
+        &self,
+        _repo_root: &Path,
+        remote: &str,
+        ref_name: &str,
+    ) -> Result<CommandOutput, AppError> {
+        self.executed
+            .borrow_mut()
+            .push(GitCommand::DeleteRemoteRef {
+                remote: remote.into(),
+                ref_name: ref_name.into(),
+            });
+        let out = self.maybe_fail("delete-remote-ref")?;
+        self.refs
+            .borrow_mut()
+            .remove(&format!("refs/remotes/{remote}/{ref_name}"));
+        Ok(out)
+    }
+
+    fn rev_parse(&self, _repo_root: &Path, reference: &str) -> Result<Option<String>, AppError> {
+        Ok(self.refs.borrow().get(reference).cloned())
+    }
+}
+
+pub struct FakeGithub {
+    pub auth_error: Mutex<Option<AppError>>,
+    pub run_list_responses: Mutex<VecDeque<Result<Vec<WorkflowRunSummary>, AppError>>>,
+    pub run_detail_responses: Mutex<VecDeque<Result<WorkflowRunDetail, AppError>>>,
+    pub artifact_fixture: Mutex<Vec<u8>>,
+    pub logs_fixture: Mutex<Vec<u8>>,
+    calls: Mutex<Vec<String>>,
+}
+
+impl FakeGithub {
+    pub fn new() -> Self {
+        Self {
+            auth_error: Mutex::new(None),
+            run_list_responses: Mutex::new(VecDeque::new()),
+            run_detail_responses: Mutex::new(VecDeque::new()),
+            artifact_fixture: Mutex::new(Vec::new()),
+            logs_fixture: Mutex::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn record(&self, call: String) {
+        self.calls.lock().unwrap().push(call);
+    }
+}
+
+impl Default for FakeGithub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GithubClient for FakeGithub {
+    fn auth_status(&self) -> Result<(), AppError> {
+        self.record("auth".into());
+        match self.auth_error.lock().unwrap().clone() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    fn list_workflow_runs(
+        &self,
+        owner: &str,
+        repo: &str,
+        head_sha: &str,
+        workflow_file_name: &str,
+    ) -> Result<Vec<WorkflowRunSummary>, AppError> {
+        self.record(format!(
+            "list-runs {owner}/{repo} {head_sha} {workflow_file_name}"
+        ));
+        self.run_list_responses
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| Ok(Vec::new()))
+    }
+
+    fn get_workflow_run(
+        &self,
+        owner: &str,
+        repo: &str,
+        run_id: u64,
+    ) -> Result<WorkflowRunDetail, AppError> {
+        self.record(format!("get-run {owner}/{repo} {run_id}"));
+        self.run_detail_responses
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| {
+                Err(AppError::Storage {
+                    detail: format!("FakeGithub has no queued detail for workflow run {run_id}"),
+                })
+            })
+    }
+
+    fn download_artifact_zip(
+        &self,
+        owner: &str,
+        repo: &str,
+        run_id: u64,
+        artifact_name: &str,
+        dest_dir: &Path,
+    ) -> Result<PathBuf, AppError> {
+        self.record(format!(
+            "download-artifact {owner}/{repo} {run_id} {artifact_name}"
+        ));
+        fs::create_dir_all(dest_dir).map_err(|error| io_error(dest_dir, error))?;
+        let path = dest_dir.join(format!("{artifact_name}.zip"));
+        fs::write(&path, self.artifact_fixture.lock().unwrap().as_slice())
+            .map_err(|error| io_error(&path, error))?;
+        Ok(path)
+    }
+
+    fn download_run_logs(
+        &self,
+        owner: &str,
+        repo: &str,
+        run_id: u64,
+        dest_path: &Path,
+    ) -> Result<PathBuf, AppError> {
+        self.record(format!("download-logs {owner}/{repo} {run_id}"));
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent).map_err(|error| io_error(parent, error))?;
+        }
+        fs::write(dest_path, self.logs_fixture.lock().unwrap().as_slice())
+            .map_err(|error| io_error(dest_path, error))?;
+        Ok(dest_path.to_path_buf())
+    }
+}
+
+fn io_error(path: &Path, error: std::io::Error) -> AppError {
+    AppError::Io {
+        path: path.display().to_string(),
+        detail: error.to_string(),
+    }
+}
+
+#[derive(Default)]
+pub struct FakeSleeper {
+    pub durations: Mutex<Vec<Duration>>,
+}
+
+impl Sleeper for FakeSleeper {
+    fn sleep(&self, duration: Duration) {
+        self.durations.lock().unwrap().push(duration);
+    }
 }
 
 pub struct FakeStore {
     pub projects: Mutex<Vec<ProjectRecord>>,
     pub operations: Mutex<Vec<OperationRecord>>,
+    pub sessions: Mutex<Vec<TestSessionRecord>>,
+    pub cleanup: Mutex<Vec<CleanupItemRecord>>,
 }
 
 impl FakeStore {
@@ -150,6 +338,8 @@ impl FakeStore {
         Self {
             projects: Mutex::new(Vec::new()),
             operations: Mutex::new(Vec::new()),
+            sessions: Mutex::new(Vec::new()),
+            cleanup: Mutex::new(Vec::new()),
         }
     }
 }
@@ -297,5 +487,136 @@ impl OperationStore for FakeStore {
         rows.reverse();
         rows.truncate(limit as usize);
         Ok(rows)
+    }
+}
+
+impl TestSessionStore for FakeStore {
+    fn create_test_session(
+        &self,
+        session: NewTestSession<'_>,
+    ) -> Result<TestSessionRecord, AppError> {
+        let record = TestSessionRecord {
+            id: session.id.into(),
+            project_id: session.project_id.into(),
+            session_id: session.session_id.into(),
+            commit_sha: session.commit_sha.into(),
+            remote_ref: session.remote_ref.into(),
+            workflow_name: session.workflow_name.into(),
+            run_id: None,
+            status: session.status,
+            result_json: session.result_json.into(),
+            evidence_dir: None,
+            created_at: session.now.into(),
+            updated_at: session.now.into(),
+        };
+        self.sessions.lock().unwrap().push(record.clone());
+        Ok(record)
+    }
+
+    fn update_test_session(&self, update: TestSessionUpdate<'_>) -> Result<(), AppError> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .iter_mut()
+            .find(|session| {
+                session.project_id == update.project_id && session.session_id == update.session_id
+            })
+            .ok_or_else(|| AppError::Storage {
+                detail: format!(
+                    "missing test session {}/{}",
+                    update.project_id, update.session_id
+                ),
+            })?;
+        session.run_id = update.run_id;
+        session.status = update.status;
+        session.result_json = update.result_json.into();
+        session.evidence_dir = update.evidence_dir.map(str::to_string);
+        session.updated_at = update.now.into();
+        Ok(())
+    }
+
+    fn get_test_session(
+        &self,
+        project_id: &str,
+        session_id: &str,
+    ) -> Result<Option<TestSessionRecord>, AppError> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|session| session.project_id == project_id && session.session_id == session_id)
+            .cloned())
+    }
+
+    fn list_test_sessions(
+        &self,
+        project_id: &str,
+        limit: u32,
+    ) -> Result<Vec<TestSessionRecord>, AppError> {
+        let mut rows: Vec<_> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|session| session.project_id == project_id)
+            .cloned()
+            .collect();
+        rows.reverse();
+        rows.truncate(limit as usize);
+        Ok(rows)
+    }
+
+    fn enqueue_cleanup(&self, item: NewCleanupItem<'_>) -> Result<CleanupItemRecord, AppError> {
+        let record = CleanupItemRecord {
+            id: item.id.into(),
+            project_id: item.project_id.into(),
+            resource_kind: item.resource_kind.into(),
+            resource_id: item.resource_id.into(),
+            expected_identity: item.expected_identity.into(),
+            due_at: item.due_at.into(),
+            status: "pending".into(),
+            created_at: item.now.into(),
+            updated_at: item.now.into(),
+        };
+        self.cleanup.lock().unwrap().push(record.clone());
+        Ok(record)
+    }
+
+    fn get_cleanup_item(
+        &self,
+        project_id: &str,
+        item_id: &str,
+    ) -> Result<Option<CleanupItemRecord>, AppError> {
+        Ok(self
+            .cleanup
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|item| item.project_id == project_id && item.id == item_id)
+            .cloned())
+    }
+
+    fn list_cleanup_items(&self, project_id: &str) -> Result<Vec<CleanupItemRecord>, AppError> {
+        Ok(self
+            .cleanup
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|item| item.project_id == project_id)
+            .cloned()
+            .collect())
+    }
+
+    fn complete_cleanup_item(&self, item_id: &str, now: &str) -> Result<(), AppError> {
+        let mut cleanup = self.cleanup.lock().unwrap();
+        let item = cleanup
+            .iter_mut()
+            .find(|item| item.id == item_id)
+            .ok_or_else(|| AppError::Storage {
+                detail: format!("missing cleanup item {item_id}"),
+            })?;
+        item.status = "completed".into();
+        item.updated_at = now.into();
+        Ok(())
     }
 }

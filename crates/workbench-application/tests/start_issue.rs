@@ -53,6 +53,7 @@ fn fake_git(snapshot: RepositorySnapshot, branch: BranchState) -> FakeGit {
         branch: RefCell::new(branch),
         executed: RefCell::new(vec![]),
         fail_kind: RefCell::new(None),
+        refs: RefCell::new(Default::default()),
     }
 }
 
@@ -470,6 +471,8 @@ fn command_is_compile_time_allowlisted(command: &GitCommand) -> &'static str {
         GitCommand::Fetch { .. } => "fetch",
         GitCommand::CreateBranch { .. } => "create-branch",
         GitCommand::PushRef { .. } => "push-ref",
+        GitCommand::CommitPaths { .. } => "commit-paths",
+        GitCommand::DeleteRemoteRef { .. } => "delete-remote-ref",
     }
 }
 

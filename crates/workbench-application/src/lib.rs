@@ -1,3 +1,4 @@
+pub mod action_tests;
 pub mod clock;
 pub mod error;
 pub mod executor;

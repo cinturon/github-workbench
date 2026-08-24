@@ -52,6 +52,7 @@ fn fake_git(snapshot: RepositorySnapshot, branch: BranchState) -> FakeGit {
         branch: RefCell::new(branch),
         executed: RefCell::new(vec![]),
         fail_kind: RefCell::new(None),
+        refs: RefCell::new(Default::default()),
     }
 }
 

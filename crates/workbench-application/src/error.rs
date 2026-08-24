@@ -40,6 +40,51 @@ pub enum AppError {
     #[error("{message}")]
     Usage { message: String },
 
+    #[error("GitHub authentication is required: {detail}")]
+    AuthRequired { detail: String },
+
+    #[error("remote test session `{session_id}` is still pending")]
+    RemotePending { session_id: String },
+
+    #[error("gh command failed: {program} {args_summary} (exit {status}): {stderr_redacted}")]
+    GithubFailed {
+        program: String,
+        args_summary: String,
+        status: i32,
+        stderr_redacted: String,
+    },
+
+    #[error("artifact `{artifact_name}` was not found for workflow run `{run_id}`")]
+    ArtifactNotFound { run_id: u64, artifact_name: String },
+
+    #[error("action `{path}` uses unsupported runtime `{using}`")]
+    ActionNotComposite { path: String, using: String },
+
+    #[error("invalid test case `{path}`: {detail}")]
+    TestCaseInvalid { path: String, detail: String },
+
+    #[error("no workflow run matched session `{session_id}` at `{head_sha}`")]
+    RunNotCorrelated {
+        session_id: String,
+        head_sha: String,
+    },
+
+    #[error("cleanup ref `{ref_name}` moved from `{expected}` to `{actual}`")]
+    CleanupRefMoved {
+        ref_name: String,
+        expected: String,
+        actual: String,
+    },
+
+    #[error("cleanup item `{item_id}` has invalid identity: {detail}")]
+    CleanupIdentityMismatch { item_id: String, detail: String },
+
+    #[error("remote test assertions failed for `{session_id}`: {failures:?}")]
+    AssertionFailed {
+        session_id: String,
+        failures: Vec<String>,
+    },
+
     #[error("{message}")]
     OperationFailed {
         message: String,
@@ -56,7 +101,11 @@ impl AppError {
             AppError::Domain(
                 WorkbenchError::PolicyBlocked { .. } | WorkbenchError::ProtectedBranchMisuse { .. },
             ) => 3,
+            AppError::AuthRequired { .. } => 4,
+            AppError::RemotePending { .. } => 5,
             AppError::Domain(WorkbenchError::InvalidPolicy { .. })
+            | AppError::ActionNotComposite { .. }
+            | AppError::TestCaseInvalid { .. }
             | AppError::Usage { .. }
             | AppError::Io { .. } => 2,
             _ => 1,
@@ -106,6 +155,82 @@ impl AppError {
                 vec!["No repository changes were made.".into()],
                 true,
                 "Install Git and ensure it is on PATH, or set GWW_GIT_PROGRAM.".into(),
+            ),
+            AppError::AuthRequired { detail } => (
+                format!("GitHub authentication is required ({detail})."),
+                Vec::new(),
+                vec!["No remote test or cleanup operation was started.".into()],
+                true,
+                "Run `gh auth login`, verify `gh auth status`, then retry.".into(),
+            ),
+            AppError::GithubFailed {
+                program,
+                args_summary,
+                status,
+                stderr_redacted,
+            } => (
+                format!("{program} {args_summary} exited {status}: {stderr_redacted}"),
+                Vec::new(),
+                vec!["Later GitHub operation steps were not started.".into()],
+                false,
+                "Inspect the redacted GitHub CLI error, fix authentication or repository access, then retry.".into(),
+            ),
+            AppError::RemotePending { session_id } => (
+                format!("Remote test session `{session_id}` is still pending."),
+                vec!["The remote test session was preserved for resumption.".into()],
+                vec!["The workflow run has not completed.".into()],
+                true,
+                format!("Resume monitoring with `gww runs watch {session_id}`."),
+            ),
+            AppError::RunNotCorrelated {
+                session_id,
+                head_sha,
+            } => (
+                format!(
+                    "No workflow run matched session `{session_id}` at commit `{head_sha}`."
+                ),
+                vec!["The remote test ref was pushed.".into()],
+                vec!["A matching workflow run was not correlated.".into()],
+                true,
+                format!(
+                    "Confirm Actions is enabled, then resume with `gww runs watch {session_id}`."
+                ),
+            ),
+            AppError::CleanupRefMoved {
+                ref_name,
+                expected,
+                actual,
+            } => (
+                format!(
+                    "Cleanup ref `{ref_name}` moved from `{expected}` to `{actual}`."
+                ),
+                Vec::new(),
+                vec!["The remote ref was not deleted.".into()],
+                false,
+                "Inspect the remote ref and enqueue cleanup again only after verifying its identity."
+                    .into(),
+            ),
+            AppError::CleanupIdentityMismatch { item_id, detail } => (
+                format!("Cleanup item `{item_id}` has invalid identity ({detail})."),
+                Vec::new(),
+                vec!["The remote ref was not deleted.".into()],
+                false,
+                "Inspect the stored session and cleanup identity before attempting deletion.".into(),
+            ),
+            AppError::AssertionFailed {
+                session_id,
+                failures,
+            } => (
+                format!(
+                    "Remote test assertions failed for `{session_id}`: {}",
+                    failures.join("; ")
+                ),
+                vec!["The workflow run and downloaded evidence were preserved.".into()],
+                vec!["The remote test was not marked as passed.".into()],
+                false,
+                format!(
+                    "Inspect the session evidence and workflow logs with `gww runs show {session_id}`."
+                ),
             ),
             AppError::RemoteNotResolved { candidates } => (
                 "Could not choose a unique Git remote.".into(),
@@ -211,5 +336,31 @@ mod tests {
         let report = err.user_report();
         assert!(report.contains("What failed"));
         assert!(report.contains("retry"));
+    }
+
+    #[test]
+    fn phase_three_exit_codes_are_stable() {
+        assert_eq!(
+            AppError::AuthRequired {
+                detail: "run gh auth login".into()
+            }
+            .exit_code(),
+            4
+        );
+        assert_eq!(
+            AppError::RemotePending {
+                session_id: "01JABC".into()
+            }
+            .exit_code(),
+            5
+        );
+        assert_eq!(
+            AppError::TestCaseInvalid {
+                path: "test.yml".into(),
+                detail: "bad runner".into(),
+            }
+            .exit_code(),
+            2
+        );
     }
 }

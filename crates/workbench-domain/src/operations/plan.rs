@@ -37,6 +37,14 @@ pub enum GitCommand {
         remote_ref: String,
         set_upstream: bool,
     },
+    CommitPaths {
+        message: String,
+        paths: Vec<String>,
+    },
+    DeleteRemoteRef {
+        remote: String,
+        ref_name: String,
+    },
 }
 
 impl GitCommand {
@@ -45,6 +53,8 @@ impl GitCommand {
             GitCommand::Fetch { .. } => "fetch",
             GitCommand::CreateBranch { .. } => "create-branch",
             GitCommand::PushRef { .. } => "push-ref",
+            GitCommand::CommitPaths { .. } => "commit-paths",
+            GitCommand::DeleteRemoteRef { .. } => "delete-remote-ref",
         }
     }
 }
