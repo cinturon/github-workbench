@@ -1,0 +1,25 @@
+---
+source: crates/workbench-domain/tests/push_plan.rs
+expression: stable
+---
+id: "00000000000000000000000000"
+kind: push
+risk: low
+summary: "Push `feature/42-add-resumable-uploads` to `github/feature/42-add-resumable-uploads`"
+rationale:
+  - "Remote `github` is the selected push target."
+  - No upstream is set; the push will create the remote branch and set upstream.
+  - Force push is never used.
+commands:
+  - type: fetch
+    remote: github
+  - type: push-ref
+    remote: github
+    local_ref: feature/42-add-resumable-uploads
+    remote_ref: feature/42-add-resumable-uploads
+    set_upstream: true
+preconditions:
+  - Working tree is clean.
+  - "Local branch `feature/42-add-resumable-uploads` exists."
+  - "Remote `github` is reachable."
+findings: []

@@ -39,6 +39,16 @@ pub enum GitCommand {
     },
 }
 
+impl GitCommand {
+    pub fn step_kind(&self) -> &'static str {
+        match self {
+            GitCommand::Fetch { .. } => "fetch",
+            GitCommand::CreateBranch { .. } => "create-branch",
+            GitCommand::PushRef { .. } => "push-ref",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperationPlan {
     pub id: Ulid,
